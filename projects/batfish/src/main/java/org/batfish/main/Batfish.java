@@ -626,7 +626,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
       try {
         rawQuestionStr =
             _storage.loadQuestion(
-                _settings.getContainer(), _settings.getAnalysisName(), _settings.getQuestionName());
+                _settings.getContainer(), _settings.getQuestionName(), _settings.getAnalysisName());
       } catch (Exception e) {
         Answer answer = new Answer();
         BatfishException exception = new BatfishException("Could not read question", e);
@@ -4386,6 +4386,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
                 bddPacket, baseAcl, baseConfig.getIpAccessLists(), baseConfig.getIpSpaces(), mgr)
             .getBdd()
             .and(headerSpaceBDD)
+            // hack
+            .and(mgr.getOriginatingFromDeviceBDD().not())
             .and(mgr.isSane());
     BDD deltaAclBDD =
         BDDAcl.create(
@@ -4463,6 +4465,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
         BDDAcl.create(bddPacket, acl, node.getIpAccessLists(), node.getIpSpaces(), mgr)
             .getBdd()
             .and(headerSpaceBDD)
+            // hack
+            .and(mgr.getOriginatingFromDeviceBDD().not())
             .and(mgr.isSane());
     return getFlow(bddPacket, mgr, node.getHostname(), bdd);
   }
