@@ -3,6 +3,7 @@ package org.batfish.question.reachfilter;
 import static org.batfish.question.testfilters.TestFiltersAnswerer.COL_FILTER_NAME;
 import static org.batfish.question.testfilters.TestFiltersAnswerer.COL_NODE;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
@@ -14,6 +15,7 @@ import com.google.common.collect.Multiset;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 import com.google.common.collect.Streams;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,18 +27,23 @@ import org.batfish.common.Answerer;
 import org.batfish.common.BatfishException;
 import org.batfish.common.Pair;
 import org.batfish.common.plugin.IBatfish;
+import org.batfish.common.util.BatfishObjectMapper;
 import org.batfish.datamodel.Configuration;
 import org.batfish.datamodel.Flow;
 import org.batfish.datamodel.IpAccessList;
 import org.batfish.datamodel.IpAccessListLine;
 import org.batfish.datamodel.LineAction;
+import org.batfish.datamodel.acl.AclLineMatchExpr;
 import org.batfish.datamodel.answers.AnswerElement;
+import org.batfish.datamodel.answers.Schema;
 import org.batfish.datamodel.questions.NodesSpecifier;
 import org.batfish.datamodel.questions.Question;
+import org.batfish.datamodel.table.ColumnMetadata;
 import org.batfish.datamodel.table.Row;
 import org.batfish.datamodel.table.Rows;
 import org.batfish.datamodel.table.TableAnswerElement;
 import org.batfish.datamodel.table.TableDiff;
+import org.batfish.datamodel.table.TableMetadata;
 import org.batfish.question.ReachFilterParameters;
 import org.batfish.question.testfilters.TestFiltersAnswerer;
 import org.batfish.question.testfilters.TestFiltersQuestion;
@@ -45,6 +52,8 @@ import org.batfish.specifier.SpecifierContext;
 
 /** Answerer for ReachFilterQuestion */
 public final class ReachFilterAnswerer extends Answerer {
+  private static final String HEADERSPACE = "HeaderSpace";
+
   private TableAnswerElement _tableAnswerElement;
 
   public ReachFilterAnswerer(Question question, IBatfish batfish) {
@@ -81,8 +90,10 @@ public final class ReachFilterAnswerer extends Answerer {
 
     ReachFilterParameters parameters = question.toReachFilterParameters();
 
-    TableAnswerElement baseTable = TestFiltersAnswerer.create(new TestFiltersQuestion(null, null));
-    TableAnswerElement deltaTable = TestFiltersAnswerer.create(new TestFiltersQuestion(null, null));
+    TableAnswerElement baseTable =
+        toReachFilterTable(TestFiltersAnswerer.create(new TestFiltersQuestion(null, null)));
+    TableAnswerElement deltaTable =
+        toReachFilterTable(TestFiltersAnswerer.create(new TestFiltersQuestion(null, null)));
 
     Set<String> commonNodes = Sets.intersection(baseAcls.keySet(), deltaAcls.keySet());
     for (String node : commonNodes) {
@@ -117,24 +128,23 @@ public final class ReachFilterAnswerer extends Answerer {
         }
 
         // present in both snapshot
-        DifferentialReachFilterResult result =
+        DifferentialReachFilterResult results =
             _batfish.differentialReachFilter(
                 baseConfig, baseAcl.get(), deltaConfig, deltaAcl.get(), parameters);
 
-        result
-            .getDecreasedFlow()
-            .ifPresent(
-                flow -> {
-                  baseTable.addRow(testFiltersRow(true, node, baseAcl.get(), flow));
-                  deltaTable.addRow(testFiltersRow(false, node, deltaAcl.get(), flow));
-                });
-
-        result
-            .getIncreasedFlow()
-            .ifPresent(
-                flow -> {
-                  baseTable.addRow(testFiltersRow(true, node, baseAcl.get(), flow));
-                  deltaTable.addRow(testFiltersRow(false, node, deltaAcl.get(), flow));
+        Stream.of(results.getDecreasedResult(), results.getIncreasedResult())
+            .filter(Optional::isPresent)
+            .map(Optional::get)
+            .forEach(
+                result -> {
+                  Flow flow = result.getExampleFlow();
+                  AclLineMatchExpr description = result.getHeaderSpaceDescription();
+                  baseTable.addRow(
+                      toReachFilterRow(
+                          description, testFiltersRow(true, node, baseAcl.get(), flow)));
+                  deltaTable.addRow(
+                      toReachFilterRow(
+                          description, testFiltersRow(false, node, deltaAcl.get(), flow)));
                 });
       }
     }
@@ -150,6 +160,39 @@ public final class ReachFilterAnswerer extends Answerer {
 
     _tableAnswerElement = new TableAnswerElement(diffTable.getMetadata());
     _tableAnswerElement.postProcessAnswer(question, diffTable.getRows().getData());
+  }
+
+  private static TableAnswerElement toReachFilterTable(TableAnswerElement tableAnswerElement) {
+    Map<String, ColumnMetadata> columnMap = tableAnswerElement.getMetadata().toColumnMap();
+
+    List<ColumnMetadata> columnMetadata = new ArrayList<>();
+    columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_NODE));
+    columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_FILTER_NAME));
+    columnMetadata.add(
+        new ColumnMetadata(HEADERSPACE, Schema.STRING, "Description of HeaderSpace"));
+    columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_FLOW));
+    columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_ACTION));
+    columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_LINE_NUMBER));
+    columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_LINE_CONTENT));
+    columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_TRACE));
+
+    TableMetadata metadata = new TableMetadata(columnMetadata);
+    return new TableAnswerElement(metadata);
+  }
+
+  private static Row toReachFilterRow(AclLineMatchExpr description, Row row) {
+    String jsonDescription = null;
+    try {
+      jsonDescription = BatfishObjectMapper.writeString(description);
+    } catch (JsonProcessingException e) {
+      e.printStackTrace();
+      jsonDescription = e.getMessage();
+    }
+
+    return Row.builder()
+        .putAll(row, row.getColumnNames())
+        .put(HEADERSPACE, jsonDescription)
+        .build();
   }
 
   private void nonDifferentialAnswer(ReachFilterQuestion question) {
@@ -168,17 +211,23 @@ public final class ReachFilterAnswerer extends Answerer {
       String hostname = pair.getFirst();
       Configuration node = configurations.get(hostname);
       IpAccessList acl = pair.getSecond();
-      Optional<Flow> result;
+      Optional<ReachFilterResult> optionalResult;
       try {
-        result = _batfish.reachFilter(node, acl, question.toReachFilterParameters());
+        optionalResult = _batfish.reachFilter(node, acl, question.toReachFilterParameters());
       } catch (Throwable t) {
         _batfish.getLogger().warn(t.getMessage());
         continue;
       }
-      result.ifPresent(flow -> rows.add(testFiltersRow(hostname, acl, flow)));
+      optionalResult.ifPresent(
+          result ->
+              rows.add(
+                  toReachFilterRow(
+                      result.getHeaderSpaceDescription(),
+                      testFiltersRow(hostname, acl, result.getExampleFlow()))));
     }
 
-    _tableAnswerElement = TestFiltersAnswerer.create(new TestFiltersQuestion(null, null));
+    _tableAnswerElement =
+        toReachFilterTable(TestFiltersAnswerer.create(new TestFiltersQuestion(null, null)));
     _tableAnswerElement.postProcessAnswer(question, rows);
   }
 
@@ -279,7 +328,6 @@ public final class ReachFilterAnswerer extends Answerer {
   }
 
   private Row testFiltersRow(boolean base, String hostname, IpAccessList acl, Flow flow) {
-    // TODO was traceFilterRow
     if (base) {
       _batfish.pushBaseEnvironment();
     } else {

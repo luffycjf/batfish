@@ -126,6 +126,7 @@ import org.batfish.datamodel.SubRange;
 import org.batfish.datamodel.SwitchportMode;
 import org.batfish.datamodel.Topology;
 import org.batfish.datamodel.Vrf;
+import org.batfish.datamodel.acl.AclExplainer;
 import org.batfish.datamodel.acl.AclLineMatchExpr;
 import org.batfish.datamodel.answers.AclReachabilityRows;
 import org.batfish.datamodel.answers.AclSpecs;
@@ -181,6 +182,7 @@ import org.batfish.question.ReachFilterParameters;
 import org.batfish.question.ReachabilityParameters;
 import org.batfish.question.ResolvedReachabilityParameters;
 import org.batfish.question.reachfilter.DifferentialReachFilterResult;
+import org.batfish.question.reachfilter.ReachFilterResult;
 import org.batfish.referencelibrary.ReferenceLibrary;
 import org.batfish.representation.aws.AwsConfiguration;
 import org.batfish.representation.host.HostConfiguration;
@@ -4188,6 +4190,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
             referencedSources(deltaConfig.getIpAccessLists(), deltaAcl));
 
     BDDSourceManager mgr = BDDSourceManager.forSources(bddPacket, activeSources, referencedSources);
+
     BDD baseAclBDD =
         BDDAcl.create(
                 bddPacket, baseAcl, baseConfig.getIpAccessLists(), baseConfig.getIpSpaces(), mgr)
@@ -4204,12 +4207,53 @@ public class Batfish extends PluginConsumer implements IBatfish {
     String hostname = baseConfig.getHostname();
 
     BDD increasedBDD = baseAclBDD.not().and(deltaAclBDD);
-    Flow increasedFlow = getFlow(bddPacket, mgr, hostname, increasedBDD).orElse(null);
+    Optional<Flow> increasedFlow = getFlow(bddPacket, mgr, hostname, increasedBDD);
 
     BDD decreasedBDD = baseAclBDD.and(deltaAclBDD.not());
-    Flow decreasedFlow = getFlow(bddPacket, mgr, hostname, decreasedBDD).orElse(null);
+    Optional<Flow> decreasedFlow = getFlow(bddPacket, mgr, hostname, decreasedBDD);
 
-    return new DifferentialReachFilterResult(increasedFlow, decreasedFlow);
+    boolean explain = reachFilterParameters.getGenerateExplanations();
+
+    /*
+     * Only generate an explanation if the differential headerspace is non-empty (i.e. we found a
+     * flow).
+     */
+    Optional<ReachFilterResult> increasedResult =
+        increasedFlow.map(
+            flow ->
+                new ReachFilterResult(
+                    flow,
+                    !explain
+                        ? null
+                        : AclExplainer.explainDifferential(
+                            bddPacket,
+                            mgr,
+                            baseAcl,
+                            baseConfig.getIpAccessLists(),
+                            baseConfig.getIpSpaces(),
+                            deltaAcl,
+                            deltaConfig.getIpAccessLists(),
+                            deltaConfig.getIpSpaces())));
+
+    Optional<ReachFilterResult> decreasedResult =
+        decreasedFlow.map(
+            flow ->
+                new ReachFilterResult(
+                    flow,
+                    !explain
+                        ? null
+                        : AclExplainer.explainDifferential(
+                            bddPacket,
+                            mgr,
+                            deltaAcl,
+                            deltaConfig.getIpAccessLists(),
+                            deltaConfig.getIpSpaces(),
+                            baseAcl,
+                            baseConfig.getIpAccessLists(),
+                            baseConfig.getIpSpaces())));
+
+    return new DifferentialReachFilterResult(
+        increasedResult.orElse(null), decreasedResult.orElse(null));
   }
 
   private Set<String> resolveDeltaSources(ReachFilterParameters parameters, String node) {
@@ -4277,7 +4321,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
   }
 
   @Override
-  public Optional<Flow> reachFilter(
+  public Optional<ReachFilterResult> reachFilter(
       Configuration node, IpAccessList acl, ReachFilterParameters parameters) {
     BDDPacket bddPacket = new BDDPacket();
 
@@ -4298,7 +4342,16 @@ public class Batfish extends PluginConsumer implements IBatfish {
             .getBdd()
             .and(headerSpaceBDD)
             .and(mgr.isSane());
-    return getFlow(bddPacket, mgr, node.getHostname(), bdd);
+
+    return getFlow(bddPacket, mgr, node.getHostname(), bdd)
+        .map(
+            flow ->
+                new ReachFilterResult(
+                    flow,
+                    parameters.getGenerateExplanations()
+                        ? AclExplainer.explain(
+                            bddPacket, mgr, acl, node.getIpAccessLists(), node.getIpSpaces())
+                        : null));
   }
 
   @Override
