@@ -53,7 +53,7 @@ import javax.ws.rs.client.Client;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import org.batfish.common.AnalysisAnswerOptions;
+import org.batfish.common.AnswerRowsOptions;
 import org.batfish.common.BatfishException;
 import org.batfish.common.BatfishLogger;
 import org.batfish.common.BfConsts;
@@ -924,19 +924,7 @@ public class WorkMgr extends AbstractCoordinator {
 
   /** Fetches the {@code MajorIssueConfig} for the given network and major issue type. */
   public MajorIssueConfig getMajorIssueConfig(String networkName, String majorIssueType) {
-    try {
-      return MajorIssueConfig.read(
-          getdirNetwork(networkName)
-              .resolve(BfConsts.RELPATH_CONTAINER_SETTINGS)
-              .resolve(BfConsts.RELPATH_CONTAINER_SETTINGS_ISSUES)
-              .resolve(majorIssueType + ".json"),
-          majorIssueType);
-    } catch (IOException e) {
-      _logger.errorf(
-          "ERROR: Could not cast file for major issue %s in network %s to MajorIssueConfig: %s",
-          majorIssueType, networkName, Throwables.getStackTraceAsString(e));
-      return new MajorIssueConfig(majorIssueType, null);
-    }
+    return _storage.loadMajorIssueConfig(networkName, majorIssueType);
   }
 
   /**
@@ -1538,16 +1526,7 @@ public class WorkMgr extends AbstractCoordinator {
   /** Writes the {@code MajorIssueConfig} for the given network and major issue type. */
   public void putMajorIssueConfig(
       String networkName, String majorIssueType, MajorIssueConfig config) throws IOException {
-    Path path =
-        getdirNetwork(networkName)
-            .resolve(BfConsts.RELPATH_CONTAINER_SETTINGS)
-            .resolve(BfConsts.RELPATH_CONTAINER_SETTINGS_ISSUES)
-            .resolve(majorIssueType + ".json");
-    if (Files.notExists(path)) {
-      Files.createDirectories(path.getParent());
-      Files.createFile(path);
-    }
-    CommonUtil.writeFile(path, BatfishObjectMapper.mapper().writeValueAsString(config));
+    _storage.storeMajorIssueConfig(networkName, majorIssueType, config);
   }
 
   public void putObject(
@@ -1817,18 +1796,18 @@ public class WorkMgr extends AbstractCoordinator {
    * analysisAnswersOptions}
    */
   public Map<String, Answer> processAnalysisAnswers(
-      Map<String, String> rawAnswers, Map<String, AnalysisAnswerOptions> analysisAnswersOptions) {
+      Map<String, String> rawAnswers, Map<String, AnswerRowsOptions> answersRowsOptions) {
     return CommonUtil.toImmutableMap(
         rawAnswers,
         Entry::getKey,
         rawAnswersEntry ->
-            processAnalysisAnswer(
-                rawAnswersEntry.getValue(), analysisAnswersOptions.get(rawAnswersEntry.getKey())));
+            processAnswerRows(
+                rawAnswersEntry.getValue(), answersRowsOptions.get(rawAnswersEntry.getKey())));
   }
 
   @VisibleForTesting
   @Nonnull
-  Answer processAnalysisAnswer(String rawAnswerStr, AnalysisAnswerOptions options) {
+  Answer processAnswerRows(String rawAnswerStr, AnswerRowsOptions options) {
     if (rawAnswerStr == null) {
       Answer answer = Answer.failureAnswer("Not found", null);
       answer.setStatus(AnswerStatus.NOTFOUND);
@@ -1840,19 +1819,17 @@ public class WorkMgr extends AbstractCoordinator {
       TableAnswerElement rawTable = (TableAnswerElement) rawAnswer.getAnswerElements().get(0);
       Answer answer = new Answer();
       answer.setStatus(rawAnswer.getStatus());
-      answer.addAnswerElement(processAnalysisAnswerTable(rawTable, options));
+      answer.addAnswerElement(processAnswerTable(rawTable, options));
       return answer;
     } catch (Exception e) {
-      _logger.errorf(
-          "Failed to convert answer string to ProcessAnalysisAnswerResult: %s", e.getMessage());
+      _logger.errorf("Failed to convert answer string to Answer: %s", e.getMessage());
       return Answer.failureAnswer(e.getMessage(), null);
     }
   }
 
   @VisibleForTesting
   @Nonnull
-  TableAnswerElement processAnalysisAnswerTable(
-      TableAnswerElement rawTable, AnalysisAnswerOptions options) {
+  TableAnswerElement processAnswerTable(TableAnswerElement rawTable, AnswerRowsOptions options) {
     Map<String, ColumnMetadata> rawColumnMap = rawTable.getMetadata().toColumnMap();
     List<Row> filteredRows =
         rawTable

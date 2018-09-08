@@ -3,6 +3,9 @@ load-questions questions/stable
 # validate aaaAuthenticationLogin
 test -raw tests/questions/stable/aaaAuthenticationLogin.ref validate-template aaaAuthenticationLogin nodes=".*"
 
+# validate definedStructures
+test -raw tests/questions/stable/definedStructures.ref validate-template definedStructures nodes="n1", names="m1", types="t1"
+
 # validate fileParseStatus
 test -raw tests/questions/stable/fileParseStatus.ref validate-template fileParseStatus
 
@@ -11,6 +14,9 @@ test -raw tests/questions/stable/ipOwners.ref validate-template ipOwners duplica
 
 # validate edges
 test -raw tests/questions/stable/edges.ref validate-template edges edgeType="bgp", nodes=".*", remoteNodes=".*"
+
+# validate ipsecSessionStatus
+test -raw tests/questions/stable/ipsecSessionStatus.ref validate-template ipsecSessionStatus nodes="n1", remoteNodes="n2", status=".*"
 
 # validate parseWarning
 test -raw tests/questions/stable/parseWarning.ref validate-template parseWarning
