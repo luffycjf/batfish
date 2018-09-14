@@ -8,8 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import net.sf.javabdd.BDD;
-import org.batfish.common.Pair;
+import org.batfish.common.bdd.BDDPacket;
+import org.batfish.common.bdd.IpSpaceToBDD;
 import org.batfish.datamodel.IpAccessList;
+import org.batfish.datamodel.IpAccessListLine;
 import org.batfish.datamodel.IpSpace;
 import org.batfish.datamodel.LineAction;
 import org.batfish.datamodel.acl.AclLineMatchExpr;
@@ -18,9 +20,7 @@ import org.batfish.datamodel.acl.TrueExpr;
 import org.batfish.datamodel.acl.normalize.AclToAclLineMatchExpr;
 import org.batfish.symbolic.bdd.AclLineMatchExprToBDD;
 import org.batfish.symbolic.bdd.BDDAcl;
-import org.batfish.symbolic.bdd.BDDPacket;
 import org.batfish.symbolic.bdd.BDDSourceManager;
-import org.batfish.symbolic.bdd.IpSpaceToBDD;
 import org.batfish.z3.BDDIpAccessListSpecializer;
 
 /**
@@ -29,6 +29,8 @@ import org.batfish.z3.BDDIpAccessListSpecializer;
  * The explanation of each permit line is of the form (matches line and doesn't match earlier deny
  * lines that intersect that space of the permit line). The client can specify a headerspace of
  * interest, and we will only include lines that intersect that space.
+ *
+ * We use specialization to simplify lines as much as possible.
  */
 public class AclExplainer {
   private final AclLineMatchExprToBDD _aclLineMatchExprToBDD;
@@ -36,18 +38,18 @@ public class AclExplainer {
   private final Map<String, IpSpace> _ipSpaces;
   private final BDDSourceManager _mgr;
 
-  private final List<Pair<LineAction, AclLineMatchExpr>> _aclLineExprs;
+  private final List<IpAccessListLine> _aclLines;
   private final IpSpaceToBDD _dstIpSpaceToBdd;
   private final IpSpaceToBDD _srcIpSpaceToBdd;
 
   public AclExplainer(BDDAcl bddAcl, IpAccessList acl, Map<String, IpAccessList> namedAcls) {
     _aclLineMatchExprToBDD = bddAcl.getAclLineMatchExprToBDD();
     _bddPacket = _aclLineMatchExprToBDD.getBDDPacket();
-    _ipSpaces = _aclLineMatchExprToBDD.getIpSpaces();
+    _ipSpaces = _aclLineMatchExprToBDD.getHeaderSpaceToBDD().getIpSpaces();
     _dstIpSpaceToBdd = _aclLineMatchExprToBDD.getHeaderSpaceToBDD().getDstIpSpaceToBdd();
     _srcIpSpaceToBdd = _aclLineMatchExprToBDD.getHeaderSpaceToBDD().getSrcIpSpaceToBdd();
     _mgr = _aclLineMatchExprToBDD.getBDDSourceManager();
-    _aclLineExprs = AclToAclLineMatchExpr.aclLines(_aclLineMatchExprToBDD, acl, namedAcls);
+    _aclLines = AclToAclLineMatchExpr.aclLines(_aclLineMatchExprToBDD, acl, namedAcls);
   }
 
   public List<AclLineMatchExpr> explanationFor(BDD headerSpaceBdd) {
@@ -59,11 +61,11 @@ public class AclExplainer {
 
     List<AclLineMatchExpr> exprs = new ArrayList<>();
 
-    for (int i = 0; !reach.isZero() && i < _aclLineExprs.size(); i++) {
-      Pair<LineAction, AclLineMatchExpr> line = _aclLineExprs.get(i);
-      BDD lineBdd = _aclLineMatchExprToBDD.visit(line.getSecond());
+    for (int i = 0; !reach.isZero() && i < _aclLines.size(); i++) {
+      IpAccessListLine line = _aclLines.get(i);
+      BDD lineBdd = _aclLineMatchExprToBDD.visit(line.getMatchCondition());
       BDD match = lineBdd.and(reach);
-      if (line.getFirst() == LineAction.PERMIT && !match.isZero()) {
+      if (line.getAction() == LineAction.PERMIT && !match.isZero()) {
         exprs.add(permitLineExplanation(i, headerSpaceBdd, simplifyToTrue));
       }
       reach = reach.and(lineBdd.not());
@@ -87,7 +89,7 @@ public class AclExplainer {
                 _dstIpSpaceToBdd,
                 _srcIpSpaceToBdd,
                 simplifyToTrue)
-            .visit(_aclLineExprs.get(i).getSecond());
+            .visit(_aclLines.get(i).getMatchCondition());
 
     // only include reject lines that overlap with the specialized line expression.
     BDD lineExprBdd = _aclLineMatchExprToBDD.visit(lineExpr).and(match);
@@ -105,11 +107,11 @@ public class AclExplainer {
     if (lineExpr != TrueExpr.INSTANCE) {
       conjuncts.add(lineExpr);
     }
-    _aclLineExprs
+    _aclLines
         .stream()
         .limit(i)
-        .filter(ln -> ln.getFirst() == LineAction.DENY)
-        .map(Pair::getSecond)
+        .filter(ln -> ln.getAction() == LineAction.DENY)
+        .map(IpAccessListLine::getMatchCondition)
         .map(specializer::visit)
         .map(AclLineMatchExprs::not)
         .filter(e -> e != TRUE)

@@ -88,6 +88,13 @@ public class AclLineMatchExprToBDD implements GenericAclLineMatchExprVisitor<BDD
     return _bddPacket;
   }
 
+  public BDDSourceManager getBDDSourceManager() {
+    return _bddSrcManager;
+  }
+
+  public HeaderSpaceToBDD getHeaderSpaceToBDD() {
+    return _headerSpaceToBDD;
+  }
   @Override
   public BDD visitAndMatchExpr(AndMatchExpr andMatchExpr) {
     return _bddOps.and(

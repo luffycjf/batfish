@@ -57,6 +57,10 @@ public final class HeaderSpaceToBDD {
     return _dstIpSpaceToBdd;
   }
 
+  public Map<String, IpSpace> getIpSpaces() {
+    return _namedIpSpaces;
+  }
+
   public IpSpaceToBDD getSrcIpSpaceToBdd() {
     return _srcIpSpaceToBdd;
   }

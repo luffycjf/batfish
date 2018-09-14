@@ -11,13 +11,13 @@ import static org.hamcrest.Matchers.hasSize;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import java.util.List;
+import org.batfish.common.bdd.BDDPacket;
 import org.batfish.datamodel.IpAccessList;
 import org.batfish.datamodel.IpAccessListLine;
 import org.batfish.datamodel.NetworkFactory;
 import org.batfish.datamodel.Prefix;
 import org.batfish.datamodel.acl.AclLineMatchExpr;
 import org.batfish.symbolic.bdd.BDDAcl;
-import org.batfish.symbolic.bdd.BDDPacket;
 import org.junit.Before;
 import org.junit.Test;
 
