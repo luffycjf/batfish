@@ -30,7 +30,7 @@ import org.batfish.z3.BDDIpAccessListSpecializer;
  * lines that intersect that space of the permit line). The client can specify a headerspace of
  * interest, and we will only include lines that intersect that space.
  *
- * We use specialization to simplify lines as much as possible.
+ * <p>We use specialization to simplify lines as much as possible.
  */
 public class AclExplainer {
   private final AclLineMatchExprToBDD _aclLineMatchExprToBDD;
