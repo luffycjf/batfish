@@ -138,7 +138,7 @@ public final class ReachFilterAnswerer extends Answerer {
             .forEach(
                 result -> {
                   Flow flow = result.getExampleFlow();
-                  AclLineMatchExpr description = result.getHeaderSpaceDescription();
+                  AclLineMatchExpr description = result.getHeaderSpaceDescription().orElse(null);
                   baseTable.addRow(
                       toReachFilterRow(
                           description, testFiltersRow(true, node, baseAcl.get(), flow)));
@@ -222,7 +222,7 @@ public final class ReachFilterAnswerer extends Answerer {
           result ->
               rows.add(
                   toReachFilterRow(
-                      result.getHeaderSpaceDescription(),
+                      result.getHeaderSpaceDescription().orElse(null),
                       testFiltersRow(hostname, acl, result.getExampleFlow()))));
     }
 

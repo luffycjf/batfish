@@ -1,5 +1,6 @@
 package org.batfish.question.reachfilter;
 
+import java.util.Optional;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
@@ -20,8 +21,8 @@ public class ReachFilterResult {
     _exampleFlow = exampleFlow;
   }
 
-  public @Nullable AclLineMatchExpr getHeaderSpaceDescription() {
-    return _headerSpaceDescription;
+  public @Nonnull Optional<AclLineMatchExpr> getHeaderSpaceDescription() {
+    return Optional.ofNullable(_headerSpaceDescription);
   }
 
   public @Nonnull Flow getExampleFlow() {

@@ -54,6 +54,7 @@ import org.batfish.datamodel.NetworkFactory;
 import org.batfish.datamodel.Prefix;
 import org.batfish.datamodel.SubRange;
 import org.batfish.datamodel.UniverseIpSpace;
+import org.batfish.datamodel.acl.TrueExpr;
 import org.batfish.datamodel.answers.Schema;
 import org.batfish.datamodel.table.TableAnswerElement;
 import org.batfish.main.Batfish;
@@ -508,5 +509,21 @@ public final class ReachFilterTest {
             .build();
     nodes = q.getNodesSpecifier().resolve(_batfish.specifierContext());
     assertThat(nodes, emptyIterable());
+  }
+
+  @Test
+  public void testGetExplanation() {
+    ReachFilterParameters params =
+        _allLocationsParams.toBuilder().setGenerateExplanations(false).build();
+    Optional<ReachFilterResult> result = _batfish.reachFilter(_config, ACCEPT_ALL_ACL, params);
+    assertThat("Should get a result", result.isPresent());
+    assertThat(
+        "Should not get an explanation", !result.get().getHeaderSpaceDescription().isPresent());
+
+    params = _allLocationsParams.toBuilder().setGenerateExplanations(true).build();
+    result = _batfish.reachFilter(_config, ACCEPT_ALL_ACL, params);
+    assertThat("Should get a result", result.isPresent());
+    assertThat("Should get an explanation", result.get().getHeaderSpaceDescription().isPresent());
+    assertThat(result.get().getHeaderSpaceDescription().get(), equalTo(TrueExpr.INSTANCE));
   }
 }
