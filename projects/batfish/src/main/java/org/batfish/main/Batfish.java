@@ -128,6 +128,7 @@ import org.batfish.datamodel.Topology;
 import org.batfish.datamodel.Vrf;
 import org.batfish.datamodel.acl.AclExplainer;
 import org.batfish.datamodel.acl.AclLineMatchExpr;
+import org.batfish.datamodel.acl.MatchHeaderSpace;
 import org.batfish.datamodel.answers.AclReachabilityRows;
 import org.batfish.datamodel.answers.AclSpecs;
 import org.batfish.datamodel.answers.Answer;
@@ -4228,6 +4229,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
                         : AclExplainer.explainDifferential(
                             bddPacket,
                             mgr,
+                            new MatchHeaderSpace(headerSpace),
                             baseAcl,
                             baseConfig.getIpAccessLists(),
                             baseConfig.getIpSpaces(),
@@ -4245,6 +4247,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
                         : AclExplainer.explainDifferential(
                             bddPacket,
                             mgr,
+                            new MatchHeaderSpace(headerSpace),
                             deltaAcl,
                             deltaConfig.getIpAccessLists(),
                             deltaConfig.getIpSpaces(),
@@ -4334,9 +4337,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
 
     BDDSourceManager mgr = BDDSourceManager.forSources(bddPacket, activeSources, referencedSources);
 
-    BDD headerSpaceBDD =
-        new HeaderSpaceToBDD(bddPacket, node.getIpSpaces())
-            .toBDD(parameters.resolveHeaderspace(specifierContext()));
+    HeaderSpace headerSpace = parameters.resolveHeaderspace(specifierContext());
+    BDD headerSpaceBDD = new HeaderSpaceToBDD(bddPacket, node.getIpSpaces()).toBDD(headerSpace);
     BDD bdd =
         BDDAcl.create(bddPacket, acl, node.getIpAccessLists(), node.getIpSpaces(), mgr)
             .getBdd()
@@ -4350,7 +4352,12 @@ public class Batfish extends PluginConsumer implements IBatfish {
                     flow,
                     parameters.getGenerateExplanations()
                         ? AclExplainer.explain(
-                            bddPacket, mgr, acl, node.getIpAccessLists(), node.getIpSpaces())
+                            bddPacket,
+                            mgr,
+                            new MatchHeaderSpace(headerSpace),
+                            acl,
+                            node.getIpAccessLists(),
+                            node.getIpSpaces())
                         : null));
   }
 
