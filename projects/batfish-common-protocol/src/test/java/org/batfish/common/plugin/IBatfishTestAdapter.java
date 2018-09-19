@@ -1,6 +1,5 @@
 package org.batfish.common.plugin;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -26,8 +25,6 @@ import org.batfish.datamodel.FlowHistory;
 import org.batfish.datamodel.Ip;
 import org.batfish.datamodel.IpAccessList;
 import org.batfish.datamodel.Topology;
-import org.batfish.datamodel.answers.AclReachabilityRows;
-import org.batfish.datamodel.answers.AclSpecs;
 import org.batfish.datamodel.answers.AnswerElement;
 import org.batfish.datamodel.answers.ConvertConfigurationAnswerElement;
 import org.batfish.datamodel.answers.DataPlaneAnswerElement;
@@ -53,17 +50,13 @@ import org.batfish.referencelibrary.ReferenceLibrary;
 import org.batfish.role.NodeRoleDimension;
 import org.batfish.role.NodeRolesData;
 import org.batfish.specifier.SpecifierContext;
+import org.batfish.specifier.SpecifierContextImpl;
 
 /**
  * A helper for tests that need an {@link IBatfish} implementation. Extend this and implement the
  * minimal methods needed.
  */
 public class IBatfishTestAdapter implements IBatfish {
-
-  @Override
-  public void answerAclReachability(List<AclSpecs> aclSpecs, AclReachabilityRows emptyAnswer) {
-    throw new UnsupportedOperationException();
-  }
 
   @Override
   public Set<Flow> bddReducedReachability() {
@@ -153,7 +146,7 @@ public class IBatfishTestAdapter implements IBatfish {
 
   @Override
   public MajorIssueConfig getMajorIssueConfig(String majorIssue) {
-    return new MajorIssueConfig(majorIssue, null);
+    throw new UnsupportedOperationException();
   }
 
   @Override
@@ -170,7 +163,7 @@ public class IBatfishTestAdapter implements IBatfish {
 
   @Override
   public BatfishLogger getLogger() {
-    throw new UnsupportedOperationException();
+    return null;
   }
 
   @Override
@@ -425,7 +418,7 @@ public class IBatfishTestAdapter implements IBatfish {
 
   @Override
   public SpecifierContext specifierContext() {
-    throw new UnsupportedOperationException();
+    return new SpecifierContextImpl(this, this.loadConfigurations());
   }
 
   @Override
