@@ -32,11 +32,10 @@ import org.batfish.datamodel.Flow;
 import org.batfish.datamodel.IpAccessList;
 import org.batfish.datamodel.IpAccessListLine;
 import org.batfish.datamodel.LineAction;
-import org.batfish.datamodel.acl.AclLineMatchExpr;
 import org.batfish.datamodel.SubRange;
+import org.batfish.datamodel.acl.AclLineMatchExpr;
 import org.batfish.datamodel.answers.AnswerElement;
 import org.batfish.datamodel.answers.Schema;
-import org.batfish.datamodel.questions.NodesSpecifier;
 import org.batfish.datamodel.questions.Question;
 import org.batfish.datamodel.table.ColumnMetadata;
 import org.batfish.datamodel.table.Row;
@@ -90,9 +89,11 @@ public final class ReachFilterAnswerer extends Answerer {
     ReachFilterParameters parameters = question.toReachFilterParameters();
 
     TableAnswerElement baseTable =
-        toReachFilterTable(TestFiltersAnswerer.create(new TestFiltersQuestion(null, null)));
+        toReachFilterTable(
+            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)));
     TableAnswerElement deltaTable =
-        toReachFilterTable(TestFiltersAnswerer.create(new TestFiltersQuestion(null, null)));
+        toReachFilterTable(
+            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)));
 
     Set<String> commonNodes = Sets.intersection(baseAcls.keySet(), deltaAcls.keySet());
     for (String node : commonNodes) {
@@ -140,10 +141,11 @@ public final class ReachFilterAnswerer extends Answerer {
                   AclLineMatchExpr description = result.getHeaderSpaceDescription().orElse(null);
                   baseTable.addRow(
                       toReachFilterRow(
-                          description, testFiltersRow(true, node, baseAcl.get(), flow)));
+                          description, testFiltersRow(true, node, baseAcl.get().getName(), flow)));
                   deltaTable.addRow(
                       toReachFilterRow(
-                          description, testFiltersRow(false, node, deltaAcl.get(), flow)));
+                          description,
+                          testFiltersRow(false, node, deltaAcl.get().getName(), flow)));
                 });
       }
     }
@@ -222,11 +224,12 @@ public final class ReachFilterAnswerer extends Answerer {
               rows.add(
                   toReachFilterRow(
                       result.getHeaderSpaceDescription().orElse(null),
-                      testFiltersRow(hostname, acl, result.getExampleFlow()))));
+                      testFiltersRow(true, hostname, acl.getName(), result.getExampleFlow()))));
     }
 
     _tableAnswerElement =
-        toReachFilterTable(TestFiltersAnswerer.create(new TestFiltersQuestion(null, null)));
+        toReachFilterTable(
+            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)));
     _tableAnswerElement.postProcessAnswer(question, rows);
   }
 
