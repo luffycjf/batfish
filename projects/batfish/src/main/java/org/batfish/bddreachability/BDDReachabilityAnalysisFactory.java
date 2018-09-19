@@ -25,6 +25,7 @@ import org.batfish.specifier.InterfaceLocation;
 import org.batfish.specifier.IpSpaceAssignment;
 import org.batfish.specifier.Location;
 import org.batfish.specifier.LocationVisitor;
+import org.batfish.specifier.NodeNameRegexConnectedHostsIpSpaceSpecifier;
 import org.batfish.symbolic.bdd.BDDAcl;
 import org.batfish.z3.expr.StateExpr;
 import org.batfish.z3.state.Accept;
@@ -120,7 +121,8 @@ public final class BDDReachabilityAnalysisFactory {
     _aclPermitBDDs = computeAclPermitBDDs(bddAcls);
 
     _arpTrueEdgeBDDs = computeArpTrueEdgeBDDs(forwardingAnalysis, _dstIpSpaceToBDD);
-    _neighborUnreachableBDDs = computeNeighborUnreachableBDDs(forwardingAnalysis, _dstIpSpaceToBDD);
+    _neighborUnreachableBDDs =
+        computeNeighborUnreachableBDDs(forwardingAnalysis, configs, _dstIpSpaceToBDD);
     _routableBDDs = computeRoutableBDDs(forwardingAnalysis, _dstIpSpaceToBDD);
     _vrfAcceptBDDs = computeVrfAcceptBDDs(configs, _dstIpSpaceToBDD);
     _vrfNotAcceptBDDs = computeVrfNotAcceptBDDs(_vrfAcceptBDDs);
@@ -237,7 +239,9 @@ public final class BDDReachabilityAnalysisFactory {
   }
 
   private static Map<String, Map<String, Map<String, BDD>>> computeNeighborUnreachableBDDs(
-      ForwardingAnalysis forwardingAnalysis, IpSpaceToBDD ipSpaceToBDD) {
+      ForwardingAnalysis forwardingAnalysis,
+      Map<String, Configuration> configs,
+      IpSpaceToBDD ipSpaceToBDD) {
     return toImmutableMap(
         forwardingAnalysis.getNeighborUnreachable(),
         Entry::getKey,
@@ -249,7 +253,41 @@ public final class BDDReachabilityAnalysisFactory {
                     toImmutableMap(
                         vrfEntry.getValue(),
                         Entry::getKey,
-                        ifaceEntry -> ifaceEntry.getValue().accept(ipSpaceToBDD))));
+                        ifaceEntry -> {
+                          /*
+                           * Only generate NEIGHBOR_UNREACHABLE for subnets less than 30 bits.
+                           * This is to avoid results that are probably irrelevant/low-value, but
+                           * it's worth noting that we're intentionally diverging from traceroute
+                           * behavior and sacrificing completeness in some cases.
+                           *
+                           * When we split NEIGHBOR_UNREACHABLE_OR_EXITS_NETWORK into
+                           * NEIGHBOR_UNREACHABLE (ARP error), DELIVERED_TO_SUBNET and
+                           * EXITS_NETWORK, packets routed out subnets of length less than 30 will
+                           * be DELIVERED_TO_SUBNET. But what about subnets of length 30 or
+                           * greater?
+                           *
+                           * TODO should we create a separate disposition delivered to subnets 30
+                           * bits or longer?
+                           */
+                          BDD ipSpaceBDD = ifaceEntry.getValue().accept(ipSpaceToBDD);
+                          BDD addressBDD =
+                              configs
+                                  .get(nodeEntry.getKey())
+                                  .getAllInterfaces()
+                                  .get(ifaceEntry.getKey())
+                                  .getAllAddresses()
+                                  .stream()
+                                  .filter(
+                                      ifaceAddress ->
+                                          ifaceAddress.getNetworkBits()
+                                              <= NodeNameRegexConnectedHostsIpSpaceSpecifier
+                                                  .HOST_SUBNET_MAX_PREFIX_LENGTH)
+                                  .map(
+                                      ifaceAddress ->
+                                          ipSpaceToBDD.visit(ifaceAddress.getPrefix().toIpSpace()))
+                                  .reduce(ipSpaceBDD.getFactory().zero(), BDD::or);
+                          return ipSpaceBDD.and(addressBDD);
+                        })));
   }
 
   private Stream<Edge> generateRules() {
