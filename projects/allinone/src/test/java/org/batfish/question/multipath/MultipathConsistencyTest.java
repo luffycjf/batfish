@@ -54,7 +54,11 @@ public class MultipathConsistencyTest {
             .setIngressNode("~Configuration_0~")
             .setIngressVrf("default")
             .setSrcIp(new Ip("2.0.0.0"))
-            .setDstIp(new Ip("2.1.0.0"))
+            /*
+             * Technically, the dstIp could be any IP in 2.1.0.0/29 - 2.1.0.0, but this is the one
+             * we always get.
+             */
+            .setDstIp(new Ip("2.1.0.1"))
             .setIpProtocol(IpProtocol.HOPOPT)
             .setState(FlowState.NEW)
             .setTag("BASE")
@@ -74,7 +78,7 @@ public class MultipathConsistencyTest {
             containsInAnyOrder(
                 ImmutableList.of(
                     hasDisposition(FlowDisposition.DENIED_IN),
-                    hasDisposition(FlowDisposition.ACCEPTED))),
+                    hasDisposition(FlowDisposition.NEIGHBOR_UNREACHABLE_OR_EXITS_NETWORK))),
             Schema.set(Schema.FLOW_TRACE)));
   }
 }

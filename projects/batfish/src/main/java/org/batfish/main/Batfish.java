@@ -4383,21 +4383,27 @@ public class Batfish extends PluginConsumer implements IBatfish {
 
     pushBaseEnvironment();
     BDDReachabilityAnalysis baseReachabilityAnalysis = getBddReachabilityAnalysis(pkt);
-    Map<IngressLocation, BDD> baseAcceptBDDs =
-        baseReachabilityAnalysis.getIngressLocationAcceptBDDs();
+    Map<IngressLocation, BDD> baseNeighborUnreachableBDDs =
+        baseReachabilityAnalysis.getIngressLocationNeighborUnreachableBDDs();
     popEnvironment();
 
     pushDeltaEnvironment();
     BDDReachabilityAnalysis deltaReachabilityAnalysis = getBddReachabilityAnalysis(pkt);
-    Map<IngressLocation, BDD> deltaAcceptBDDs =
-        deltaReachabilityAnalysis.getIngressLocationAcceptBDDs();
+    Map<IngressLocation, BDD> deltaAcceptOrNeighborUnreachableBDDs =
+        deltaReachabilityAnalysis.getIngressLocationAcceptOrNeighborUnreachableBDDs();
+    Map<IngressLocation, BDD> deltaNeighborUnreachableBDDs =
+        deltaReachabilityAnalysis.getIngressLocationNeighborUnreachableBDDs();
     popEnvironment();
 
     Set<IngressLocation> commonSources =
-        Sets.intersection(baseAcceptBDDs.keySet(), deltaAcceptBDDs.keySet());
+        Sets.intersection(
+            baseNeighborUnreachableBDDs.keySet(), deltaAcceptOrNeighborUnreachableBDDs.keySet());
     ImmutableSet.Builder<Flow> flows = ImmutableSet.builder();
     for (IngressLocation source : commonSources) {
-      BDD reduced = baseAcceptBDDs.get(source).and(deltaAcceptBDDs.get(source).not());
+      BDD reduced =
+          baseNeighborUnreachableBDDs
+              .get(source)
+              .and(deltaAcceptOrNeighborUnreachableBDDs.get(source).not());
       if (reduced.isZero()) {
         continue;
       }

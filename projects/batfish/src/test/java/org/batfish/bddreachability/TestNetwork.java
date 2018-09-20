@@ -23,8 +23,11 @@ import org.batfish.datamodel.Vrf;
 
 /** A test network with two nodes and two static routes from one to the other. */
 public final class TestNetwork {
-  public static final Prefix DST_PREFIX_1 = Prefix.parse("1.1.0.0/32");
-  public static final Prefix DST_PREFIX_2 = Prefix.parse("2.1.0.0/32");
+  public static final Prefix DST_PREFIX_1 = Prefix.parse("1.1.0.0/29");
+
+  // we're going to create a multipath inconsistency for DST_PREFIX_2
+  public static final Prefix DST_PREFIX_2 = Prefix.parse("2.1.0.0/29");
+
   public static final Prefix LINK_1_NETWORK = Prefix.parse("1.0.0.0/31");
   public static final Prefix LINK_2_NETWORK = Prefix.parse("2.0.0.0/31");
   public static final Ip SOURCE_NAT_ACL_IP = new Ip("5.5.5.5");

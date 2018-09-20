@@ -84,12 +84,20 @@ public class BDDReachabilityAnalysis {
   BDDReachabilityAnalysis(
       BDDPacket packet,
       Map<StateExpr, BDD> graphRoots,
-      Map<StateExpr, Map<StateExpr, Edge>> transitions) {
+      Map<StateExpr, Map<StateExpr, Edge>> transitions,
+      Set<Disposition> flowDispositions) {
     _bddPacket = packet;
     _edges = computeEdges(graphRoots, transitions);
     _reverseEdges = computeReverseEdges(_edges);
     _graphRoots = ImmutableMap.copyOf(graphRoots);
     _reverseReachableStates = Suppliers.memoize(this::computeReverseReachableStates);
+    /*
+    _leafStates =
+        flowDispositions
+            .stream()
+            .map(Disposition::toStateExpr)
+            .collect(ImmutableSet.toImmutableSet());
+            */
     _leafStates = computeTerminalStates();
     _srcIpVars = new BDDOps(_bddPacket.getFactory()).and(_bddPacket.getSrcIp().getBitvec());
   }
@@ -290,6 +298,42 @@ public class BDDReachabilityAnalysis {
                 entry -> entry.getValue().getOrDefault(Accept.INSTANCE, zero)));
   }
 
+  public Map<IngressLocation, BDD> getIngressLocationNeighborUnreachableBDDs() {
+    BDD zero = _bddPacket.getFactory().zero();
+    return _reverseReachableStates
+        .get()
+        .entrySet()
+        .stream()
+        .filter(
+            entry ->
+                entry.getKey() instanceof OriginateInterfaceLink
+                    || entry.getKey() instanceof OriginateVrf)
+        .collect(
+            ImmutableMap.toImmutableMap(
+                entry -> toIngressLocation(entry.getKey()),
+                entry -> entry.getValue().getOrDefault(NeighborUnreachable.INSTANCE, zero)));
+  }
+
+  public Map<IngressLocation, BDD> getIngressLocationAcceptOrNeighborUnreachableBDDs() {
+    BDD zero = _bddPacket.getFactory().zero();
+    return _reverseReachableStates
+        .get()
+        .entrySet()
+        .stream()
+        .filter(
+            entry ->
+                entry.getKey() instanceof OriginateInterfaceLink
+                    || entry.getKey() instanceof OriginateVrf)
+        .collect(
+            ImmutableMap.toImmutableMap(
+                entry -> toIngressLocation(entry.getKey()),
+                entry ->
+                    entry
+                        .getValue()
+                        .getOrDefault(Accept.INSTANCE, zero)
+                        .or(entry.getValue().getOrDefault(NeighborUnreachable.INSTANCE, zero))));
+  }
+
   @VisibleForTesting
   static IngressLocation toIngressLocation(StateExpr stateExpr) {
     Preconditions.checkArgument(
@@ -312,6 +356,7 @@ public class BDDReachabilityAnalysis {
   public Set<Flow> multipathInconsistencies(String flowTag) {
     return computeMultipathInconsistencies()
         .stream()
+        .filter(violation -> !violation.getFinalStates().contains(Accept.INSTANCE))
         .map(violation -> multipathInconsistencyToFlow(violation, flowTag))
         .collect(ImmutableSet.toImmutableSet());
   }

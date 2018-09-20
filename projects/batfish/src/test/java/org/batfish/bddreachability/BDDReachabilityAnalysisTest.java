@@ -1,6 +1,7 @@
 package org.batfish.bddreachability;
 
 import static org.batfish.bddreachability.BDDReachabilityAnalysis.toIngressLocation;
+import static org.batfish.bddreachability.Disposition.ALL_DISPOSITIONS;
 import static org.batfish.bddreachability.TestNetwork.DST_PREFIX_1;
 import static org.batfish.bddreachability.TestNetwork.DST_PREFIX_2;
 import static org.batfish.bddreachability.TestNetwork.LINK_1_NETWORK;
@@ -12,7 +13,6 @@ import static org.batfish.common.bdd.BDDMatchers.isOne;
 import static org.batfish.datamodel.Configuration.DEFAULT_VRF_NAME;
 import static org.batfish.datamodel.matchers.FlowMatchers.hasDstIp;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
@@ -33,6 +33,7 @@ import org.batfish.datamodel.Configuration;
 import org.batfish.datamodel.DataPlane;
 import org.batfish.datamodel.Flow;
 import org.batfish.datamodel.Ip;
+import org.batfish.datamodel.Prefix;
 import org.batfish.datamodel.UniverseIpSpace;
 import org.batfish.main.Batfish;
 import org.batfish.main.BatfishTestUtils;
@@ -91,6 +92,9 @@ public final class BDDReachabilityAnalysisTest {
   private PreOutEdgePostNat _dstPreOutEdgePostNat2;
   private PreOutVrf _dstPreOutVrf;
 
+  private BDD _dstPrefix1BDD;
+  private BDD _dstPrefix2BDD;
+
   private BDD _link1DstIpBDD;
   private String _link1DstName;
 
@@ -138,6 +142,8 @@ public final class BDDReachabilityAnalysisTest {
     _dstIface2Name = _net._dstIface2.getName();
     _dstName = _net._dstNode.getHostname();
     _dstNodeAccept = new NodeAccept(_dstName);
+    _dstPrefix1BDD = dstPrefixBDD(DST_PREFIX_1);
+    _dstPrefix2BDD = dstPrefixBDD(DST_PREFIX_2);
     _dstPostInVrf = new PostInVrf(_dstName, DEFAULT_VRF_NAME);
     _dstPreOutVrf = new PreOutVrf(_dstName, DEFAULT_VRF_NAME);
 
@@ -191,6 +197,10 @@ public final class BDDReachabilityAnalysisTest {
 
   private static BDD dstIpBDD(Ip ip) {
     return new IpSpaceToBDD(PKT.getFactory(), PKT.getDstIp()).toBDD(ip);
+  }
+
+  private static BDD dstPrefixBDD(Prefix prefix) {
+    return new IpSpaceToBDD(PKT.getFactory(), PKT.getDstIp()).toBDD(prefix);
   }
 
   private static BDD dstPortBDD(int destPort) {
@@ -247,26 +257,35 @@ public final class BDDReachabilityAnalysisTest {
 
   @Test
   public void testBDDTransitions_PostInVrf_PreOutVrf() {
+    /*
+     * The transition from PostInVrf to PreOutVrf includes the IPs that are routable (meaning there
+     * is a route for them) and not accepted by the VRF.
+     */
     assertThat(
-        bddTransition(_dstPostInVrf, _dstPreOutVrf), equalTo(or(_link1SrcIpBDD, _link2SrcIpBDD)));
+        bddTransition(_dstPostInVrf, _dstPreOutVrf),
+        equalTo(
+            or(
+                _link1SrcIpBDD,
+                _link2SrcIpBDD,
+                _dstPrefix1BDD.and(_dstIface1IpBDD.not()),
+                _dstPrefix2BDD.and(_dstIface2IpBDD.not()))));
 
     assertThat(
         bddTransition(_srcPostInVrf, _srcPreOutVrf),
-        equalTo(or(_link1DstIpBDD, _link2DstIpBDD, _dstIface1IpBDD, _dstIface2IpBDD)));
+        equalTo(or(_link1DstIpBDD, _link2DstIpBDD, _dstPrefix1BDD, _dstPrefix2BDD)));
   }
 
   @Test
   public void testBDDTransitions_PreInInterface_NodeDropAclIn() {
     NodeDropAclIn dstDropAclIn = new NodeDropAclIn(_dstName);
-    assertThat(bddTransition(_dstPreInInterface1, dstDropAclIn), equalTo(dstIpBDD(_dstIface2Ip)));
+    assertThat(bddTransition(_dstPreInInterface1, dstDropAclIn), equalTo(_dstPrefix2BDD));
     assertThat(bddTransition(_dstPreInInterface2, dstDropAclIn), nullValue());
   }
 
   @Test
   public void testBDDTransitions_PreInInterface_PostInVrf() {
     // link1: not(_dstIface2Ip)
-    assertThat(
-        bddTransition(_dstPreInInterface1, _dstPostInVrf), equalTo(dstIpBDD(_dstIface2Ip).not()));
+    assertThat(bddTransition(_dstPreInInterface1, _dstPostInVrf), equalTo(_dstPrefix2BDD.not()));
     // link2: universe
     assertThat(bddTransition(_dstPreInInterface2, _dstPostInVrf), isOne());
   }
@@ -282,53 +301,42 @@ public final class BDDReachabilityAnalysisTest {
         bddTransition(_srcPreOutVrf, new NodeInterfaceNeighborUnreachable(_srcName, link2SrcName));
     BDD preOutEdge1 = bddTransition(_srcPreOutVrf, _srcPreOutEdge1);
     BDD preOutEdge2 = bddTransition(_srcPreOutVrf, _srcPreOutEdge2);
-    BDD postNatAclBDD = dstPortBDD(POST_SOURCE_NAT_ACL_DEST_PORT);
 
     assertThat(nodeDropNullRoute, nullValue());
 
-    assertThat(nodeInterfaceNeighborUnreachable1, equalTo(_link1SrcIpBDD));
-    assertThat(nodeInterfaceNeighborUnreachable2, equalTo(_link2SrcIpBDD.and(postNatAclBDD)));
+    assertThat(nodeInterfaceNeighborUnreachable1, nullValue());
+    assertThat(nodeInterfaceNeighborUnreachable2, nullValue());
 
-    assertThat(
-        bddIps(preOutEdge1),
-        containsInAnyOrder(_dstIface1Ip, _dstIface2Ip, _net._link1Dst.getAddress().getIp()));
-    assertThat(
-        bddIps(preOutEdge2), containsInAnyOrder(_dstIface2Ip, _net._link2Dst.getAddress().getIp()));
+    assertThat(preOutEdge1, equalTo(or(_dstPrefix1BDD, _dstPrefix2BDD, _link1DstIpBDD)));
+    assertThat(preOutEdge2, equalTo(or(_dstPrefix2BDD, _link2DstIpBDD)));
 
-    // ECMP: _dstIface1Ip is routed out both edges
-    assertThat(preOutEdge1.and(preOutEdge2), equalTo(dstIpBDD(_dstIface2Ip)));
+    // ECMP: DST_PREFIX_2 is routed out both edges
+    assertThat(preOutEdge1.and(preOutEdge2), equalTo(_dstPrefix2BDD));
   }
 
   @Test
   public void testBDDTransitions_PreOutVrf_NodeInterfaceNeighborUnreachable() {
     /*
-     * These predicates include the IP address of the interface, which is technically wrong.
+     * This includes the IP address of the interface, which is technically wrong.
      * It doesn't matter because those addresses can't get to PreOutVrf from PostInVrf.
      */
     assertThat(
         bddTransition(
             _dstPreOutVrf, new NodeInterfaceNeighborUnreachable(_dstName, _dstIface1Name)),
-        equalTo(_dstIface1IpBDD));
+        equalTo(_dstPrefix1BDD));
     assertThat(
         bddTransition(
             _dstPreOutVrf, new NodeInterfaceNeighborUnreachable(_dstName, _dstIface2Name)),
-        equalTo(_dstIface2IpBDD));
-    assertThat(
-        bddTransition(_dstPreOutVrf, new NodeInterfaceNeighborUnreachable(_dstName, _link1DstName)),
-        equalTo(_link1DstIpBDD));
-    assertThat(
-        bddTransition(_dstPreOutVrf, new NodeInterfaceNeighborUnreachable(_dstName, _link2DstName)),
-        equalTo(_link2DstIpBDD));
+        equalTo(_dstPrefix2BDD));
   }
 
   @Test
   public void testBDDTransitions_PreOutVrf_PreOutEdge() {
     assertThat(
         bddTransition(_srcPreOutVrf, _srcPreOutEdge1),
-        equalTo(or(_link1DstIpBDD, _dstIface1IpBDD, _dstIface2IpBDD)));
+        equalTo(or(_link1DstIpBDD, _dstPrefix1BDD, _dstPrefix2BDD)));
     assertThat(
-        bddTransition(_srcPreOutVrf, _srcPreOutEdge2),
-        equalTo(or(_link2DstIpBDD, _dstIface2IpBDD)));
+        bddTransition(_srcPreOutVrf, _srcPreOutEdge2), equalTo(or(_link2DstIpBDD, _dstPrefix2BDD)));
 
     assertThat(bddTransition(_dstPreOutVrf, _dstPreOutEdge1), equalTo(_link1SrcIpBDD));
     assertThat(bddTransition(_dstPreOutVrf, _dstPreOutEdge2), equalTo(_link2SrcIpBDD));
@@ -429,7 +437,8 @@ public final class BDDReachabilityAnalysisTest {
             ImmutableMap.of(originateVrf, one),
             ImmutableMap.of(
                 originateVrf,
-                ImmutableMap.of(Drop.INSTANCE, new Edge(originateVrf, Drop.INSTANCE, one))));
+                ImmutableMap.of(Drop.INSTANCE, new Edge(originateVrf, Drop.INSTANCE, one))),
+            ALL_DISPOSITIONS);
     assertThat(
         graph.getIngressLocationAcceptBDDs(),
         equalTo(ImmutableMap.of(toIngressLocation(originateVrf), pkt.getFactory().zero())));

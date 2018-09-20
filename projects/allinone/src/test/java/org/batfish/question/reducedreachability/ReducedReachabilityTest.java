@@ -79,14 +79,17 @@ public class ReducedReachabilityTest {
     Configuration node2 = _cb.setHostname(NODE2).build();
     Vrf v2 = _vb.setOwner(node2).build();
     _ib.setOwner(node2).setVrf(v2);
-    _ib.setName(PHYSICAL)
-        .setAddresses(new InterfaceAddress("1.1.1.3/31"), new InterfaceAddress("2.2.2.2/32"))
-        .build();
+    _ib.setName(LOOPBACK).setAddresses(new InterfaceAddress("1.1.1.4/32")).build();
+    _ib.setName(PHYSICAL).setAddresses(new InterfaceAddress("1.1.1.3/31")).build();
     v2.setStaticRoutes(
         ImmutableSortedSet.of(
             StaticRoute.builder()
                 .setNetwork(Prefix.parse("1.1.1.1/32"))
                 .setNextHopInterface(PHYSICAL)
+                .build(),
+            StaticRoute.builder()
+                .setNetwork(Prefix.parse("2.2.2.2/32"))
+                .setNextHopInterface(LOOPBACK)
                 .build()));
 
     return ImmutableSortedMap.of(NODE1, node1, NODE2, node2);
@@ -127,12 +130,17 @@ public class ReducedReachabilityTest {
                         // at least one trace in base environment is accepted
                         hasColumn(
                             ReducedReachabilityAnswerer.COL_BASE_TRACES,
-                            hasItem(hasDisposition(FlowDisposition.ACCEPTED)),
+                            hasItem(
+                                hasDisposition(
+                                    FlowDisposition.NEIGHBOR_UNREACHABLE_OR_EXITS_NETWORK)),
                             Schema.list(Schema.FLOW_TRACE)),
                         // no trace in delta environment is accepted
                         hasColumn(
                             ReducedReachabilityAnswerer.COL_DELTA_TRACES,
-                            not(hasItem(hasDisposition(FlowDisposition.ACCEPTED))),
+                            not(
+                                hasItem(
+                                    hasDisposition(
+                                        FlowDisposition.NEIGHBOR_UNREACHABLE_OR_EXITS_NETWORK))),
                             Schema.list(Schema.FLOW_TRACE)))))));
   }
 }

@@ -77,13 +77,16 @@ public class ReducedReachabilityTest {
     Configuration node2 = _cb.setHostname(NODE2).build();
     Vrf v2 = _vb.setOwner(node2).build();
     _ib.setOwner(node2).setVrf(v2);
-    _ib.setName(PHYSICAL)
-        .setAddresses(new InterfaceAddress("1.1.1.3/31"), new InterfaceAddress("2.2.2.2/32"))
-        .build();
+    _ib.setName(LOOPBACK).setAddresses(new InterfaceAddress("1.1.1.4/32")).build();
+    _ib.setName(PHYSICAL).setAddresses(new InterfaceAddress("1.1.1.3/31")).build();
     v2.setStaticRoutes(
         ImmutableSortedSet.of(
             StaticRoute.builder()
                 .setNetwork(Prefix.parse("1.1.1.1/32"))
+                .setNextHopInterface(PHYSICAL)
+                .build(),
+            StaticRoute.builder()
+                .setNetwork(Prefix.parse("2.2.2.2/32"))
                 .setNextHopInterface(PHYSICAL)
                 .build()));
 
@@ -121,7 +124,8 @@ public class ReducedReachabilityTest {
     AnswerElement answer =
         batfish.reducedReachability(
             ReachabilityParameters.builder()
-                .setActions(ImmutableSortedSet.of(ForwardingAction.ACCEPT))
+                .setActions(
+                    ImmutableSortedSet.of(ForwardingAction.NEIGHBOR_UNREACHABLE_OR_EXITS_NETWORK))
                 .setFinalNodesSpecifier(new NameRegexNodeSpecifier(Pattern.compile(NODE2)))
                 .setHeaderSpace(
                     HeaderSpace.builder().setDstIps(NODE2_ALTERNATE_IP.toIpSpace()).build())

@@ -1,5 +1,6 @@
 package org.batfish.bddreachability;
 
+import static org.batfish.bddreachability.Disposition.ALL_DISPOSITIONS;
 import static org.batfish.common.util.CommonUtil.toImmutableMap;
 
 import com.google.common.collect.ImmutableList;
@@ -9,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.stream.Stream;
 import javax.annotation.Nonnull;
 import net.sf.javabdd.BDD;
@@ -254,8 +256,11 @@ public final class BDDReachabilityAnalysisFactory {
                         vrfEntry.getValue(),
                         Entry::getKey,
                         ifaceEntry -> {
+                          BDD ipSpaceBDD = ifaceEntry.getValue().accept(ipSpaceToBDD);
                           /*
-                           * Only generate NEIGHBOR_UNREACHABLE for subnets less than 30 bits.
+                           * Only generate NEIGHBOR_UNREACHABLE for packets destined to the
+                           * interface subnet if the subnet is a host subnet.
+                           *
                            * This is to avoid results that are probably irrelevant/low-value, but
                            * it's worth noting that we're intentionally diverging from traceroute
                            * behavior and sacrificing completeness in some cases.
@@ -269,8 +274,7 @@ public final class BDDReachabilityAnalysisFactory {
                            * TODO should we create a separate disposition delivered to subnets 30
                            * bits or longer?
                            */
-                          BDD ipSpaceBDD = ifaceEntry.getValue().accept(ipSpaceToBDD);
-                          BDD addressBDD =
+                          BDD excludeBDD =
                               configs
                                   .get(nodeEntry.getKey())
                                   .getAllInterfaces()
@@ -280,13 +284,13 @@ public final class BDDReachabilityAnalysisFactory {
                                   .filter(
                                       ifaceAddress ->
                                           ifaceAddress.getNetworkBits()
-                                              <= NodeNameRegexConnectedHostsIpSpaceSpecifier
+                                              > NodeNameRegexConnectedHostsIpSpaceSpecifier
                                                   .HOST_SUBNET_MAX_PREFIX_LENGTH)
                                   .map(
                                       ifaceAddress ->
                                           ipSpaceToBDD.visit(ifaceAddress.getPrefix().toIpSpace()))
                                   .reduce(ipSpaceBDD.getFactory().zero(), BDD::or);
-                          return ipSpaceBDD.and(addressBDD);
+                          return ipSpaceBDD.and(excludeBDD.not());
                         })));
   }
 
@@ -700,11 +704,19 @@ public final class BDDReachabilityAnalysisFactory {
   }
 
   public BDDReachabilityAnalysis bddReachabilityAnalysis(IpSpaceAssignment srcIpSpaceAssignment) {
-    return bddReachabilityAnalysis(srcIpSpaceAssignment, UniverseIpSpace.INSTANCE);
+    return bddReachabilityAnalysis(
+        srcIpSpaceAssignment, UniverseIpSpace.INSTANCE, ALL_DISPOSITIONS);
   }
 
   public BDDReachabilityAnalysis bddReachabilityAnalysis(
       IpSpaceAssignment srcIpSpaceAssignment, IpSpace dstIpSpace) {
+    return bddReachabilityAnalysis(srcIpSpaceAssignment, dstIpSpace, ALL_DISPOSITIONS);
+  }
+
+  public BDDReachabilityAnalysis bddReachabilityAnalysis(
+      IpSpaceAssignment srcIpSpaceAssignment,
+      IpSpace dstIpSpace,
+      Set<Disposition> flowDispositions) {
     Map<StateExpr, BDD> roots = new HashMap<>();
     IpSpaceToBDD srcIpSpaceToBDD = new IpSpaceToBDD(_bddPacket.getFactory(), _bddPacket.getSrcIp());
     IpSpaceToBDD dstIpSpaceToBDD = new IpSpaceToBDD(_bddPacket.getFactory(), _bddPacket.getDstIp());
@@ -719,7 +731,7 @@ public final class BDDReachabilityAnalysisFactory {
       }
     }
 
-    return new BDDReachabilityAnalysis(_bddPacket, roots, _edges);
+    return new BDDReachabilityAnalysis(_bddPacket, roots, _edges, flowDispositions);
   }
 
   private String ifaceVrf(String node, String iface) {
