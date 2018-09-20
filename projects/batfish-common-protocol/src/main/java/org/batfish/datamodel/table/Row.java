@@ -12,9 +12,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
+import java.io.NotSerializableException;
 import java.io.Serializable;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -47,19 +50,21 @@ public class Row implements Comparable<Row>, Serializable {
 
   private static final long serialVersionUID = 1L;
 
-  public abstract static class RowBuilder {
+  public static class RowBuilder {
 
-    @Nonnull private final ObjectNode _data;
+    private final Map<String, Object> _data;
 
-    private RowBuilder() {
-      _data = BatfishObjectMapper.mapper().createObjectNode();
+    private RowBuilder(Map<String, ColumnMetadata> columns) {
+      _columns = columns;
+      _data = new HashMap<>();
     }
 
     public Row build() {
-      return new Row(_data.deepCopy());
+      return new Row(ImmutableMap.copyOf(_columns), ImmutableMap.copyOf(_data));
     }
 
     @VisibleForTesting
+    @Nonnull
     Row rowOf(Object... objects) {
       checkArgument(
           objects.length % 2 == 0,
@@ -76,15 +81,6 @@ public class Row implements Comparable<Row>, Serializable {
       return build();
     }
 
-    /**
-     * Sets the value of {@code column} to {@code value}.
-     *
-     * <p>Any existing values for the column are overwritten
-     */
-    public RowBuilder put(String column, @Nullable Object value) {
-      _data.set(column, BatfishObjectMapper.mapper().valueToTree(value));
-      return this;
-    }
 
     /** Mirrors the values of all columns in {@code otherRow} */
     public RowBuilder putAll(Row otherRow) {
@@ -100,48 +96,24 @@ public class Row implements Comparable<Row>, Serializable {
       columns.forEach(col -> put(col, otherRow.get(col)));
       return this;
     }
-  }
-
-  public static class TypedRowBuilder extends RowBuilder {
 
     Map<String, ColumnMetadata> _columns;
-
-    private TypedRowBuilder(Map<String, ColumnMetadata> columns) {
-      _columns = columns;
-    }
 
     /**
      * Puts {@code object} into column {@code column} of the row, after checking if the object is
      * compatible with the Schema of the column
      */
-    @Override
-    public TypedRowBuilder put(String column, @Nullable Object object) {
+    public RowBuilder put(String column, @Nullable Object value) {
       checkArgument(
           _columns.containsKey(column), Row.missingColumnErrorMessage(column, _columns.keySet()));
       Schema expectedSchema = _columns.get(column).getSchema();
       checkArgument(
-          SchemaUtils.isValidObject(object, expectedSchema),
+          SchemaUtils.isValidObject(value, expectedSchema),
           String.format(
-              "Cannot convert '%s' to Schema '%s' of column '%s", object, expectedSchema, column));
-      super.put(column, object);
+              "Cannot convert '%s' to Schema '%s' of column '%s", value, expectedSchema, column));
+      _data.put(column, value);
       return this;
     }
-  }
-
-  public static class UntypedRowBuilder extends RowBuilder {
-    private UntypedRowBuilder() {}
-  }
-
-  @Nonnull private final ObjectNode _data;
-
-  /**
-   * Returns a new {@link Row} with the given entries.
-   *
-   * <p>{@code objects} should be an even number of parameters, where the 0th and every even
-   * parameter is a {@link String} representing the name of a column.
-   */
-  public static Row of(Object... objects) {
-    return builder().rowOf(objects);
   }
 
   /**
@@ -155,19 +127,9 @@ public class Row implements Comparable<Row>, Serializable {
     return builder(columns).rowOf(objects);
   }
 
-  @JsonCreator
-  private Row(ObjectNode data) {
-    _data = firstNonNull(data, BatfishObjectMapper.mapper().createObjectNode());
-  }
-
-  /** Returns an {@link UntypedRowBuilder} object for Row */
-  public static UntypedRowBuilder builder() {
-    return new UntypedRowBuilder();
-  }
-
-  /** Returns a {@link TypedRowBuilder} object for Row */
-  public static TypedRowBuilder builder(Map<String, ColumnMetadata> columns) {
-    return new TypedRowBuilder(columns);
+  /** Returns a {@link RowBuilder} object for Row */
+  public static RowBuilder builder(Map<String, ColumnMetadata> columns) {
+    return new RowBuilder(columns);
   }
 
   /**
@@ -189,12 +151,25 @@ public class Row implements Comparable<Row>, Serializable {
     }
   }
 
+  private final Map<String, Object> _data;
+
+  private final Map<String, ColumnMetadata> _columnMetadata;
+
+  private Row(Map<String, ColumnMetadata> columnMetadata, Map<String, Object> data) {
+    _columnMetadata = columnMetadata;
+    _data = data;
+  }
+
   @Override
   public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
     if (!(o instanceof Row)) {
       return false;
     }
-    return _data.equals(((Row) o)._data);
+    Row rhs = (Row) o;
+    return _columnMetadata.equals(rhs._columnMetadata) && _data.equals(rhs._data);
   }
 
   /**
@@ -204,8 +179,8 @@ public class Row implements Comparable<Row>, Serializable {
    * @return The {@link JsonNode} object that represents the stored object
    * @throws NoSuchElementException if this column does not exist
    */
-  public JsonNode get(String columnName) {
-    if (!_data.has(columnName)) {
+  public @Nullable Object get(String columnName) {
+    if (!_data.containsKey(columnName)) {
       throw new NoSuchElementException(missingColumnErrorMessage(columnName, getColumnNames()));
     }
     return _data.get(columnName);
@@ -214,33 +189,20 @@ public class Row implements Comparable<Row>, Serializable {
   /**
    * Gets the value of specified column
    *
-   * @param columnName The column to fetch
+   * @param column The column to fetch
+   * @param schema A compatible Schema by which the value may be represented
    * @return The result
    * @throws NoSuchElementException if this column is not present
    * @throws ClassCastException if the recovered data cannot be cast to the expected object
    */
-  public Object get(String columnName, Schema columnSchema) {
-    if (!_data.has(columnName)) {
-      throw new NoSuchElementException(missingColumnErrorMessage(columnName, getColumnNames()));
+  private Object get(String column, Schema schema) {
+    if (!_data.containsKey(column)) {
+      throw new NoSuchElementException(missingColumnErrorMessage(column, getColumnNames()));
     }
-    if (_data.get(columnName).isNull()) {
+    if (_data.get(column) == null) {
       return null;
     }
-    return SchemaUtils.convertType(_data.get(columnName), columnSchema);
-  }
-
-  /** Get the value of specified column safely cast to type specifed via {@code typeReference}. */
-  public <T> T get(String columnName, TypeReference<T> typeReference) {
-    ObjectMapper mapper = BatfishObjectMapper.mapper();
-    JsonNode node = get(columnName);
-    try {
-      return mapper.readValue(mapper.treeAsTokens(node), typeReference);
-    } catch (IOException e) {
-      throw new ClassCastException(
-          String.format(
-              "Cannot cast row element in column '%s' given the provided TypeReference: %s",
-              columnName, Throwables.getStackTraceAsString(e)));
-    }
+    return SchemaUtils.convertType(_data.get(column), schema);
   }
 
   public Boolean getBoolean(String column) {
@@ -253,14 +215,7 @@ public class Row implements Comparable<Row>, Serializable {
    * @return The {@link Set} of names
    */
   public Set<String> getColumnNames() {
-    HashSet<String> columns = new HashSet<>();
-    _data.fieldNames().forEachRemaining(columns::add);
-    return columns;
-  }
-
-  @JsonValue
-  private ObjectNode getData() {
-    return _data;
+    return _columnMetadata.keySet();
   }
 
   public Double getDouble(String column) {
@@ -293,6 +248,20 @@ public class Row implements Comparable<Row>, Serializable {
       }
     }
     return keyList;
+  }
+
+  @JsonCreator
+  private static Row forbidJacksonDeserialization(Object o) {
+    throw new UnsupportedOperationException(
+        String.format(
+            "%s not intended to be deserialized via Jackson", Row.class.getCanonicalName()));
+  }
+
+  @JsonValue
+  private static Object forbidJacksonSerialization() {
+    throw new UnsupportedOperationException(
+        String.format(
+            "%s not intended to be serialized via Jackson", Row.class.getCanonicalName()));
   }
 
   /** This used to be the old signature, changed now to {@link #getKey(List)} */
@@ -362,7 +331,7 @@ public class Row implements Comparable<Row>, Serializable {
    * @param exclusion The exclusion to check against.
    * @return The result of the check
    */
-  public boolean isCovered(ObjectNode exclusion) {
+  public boolean isCovered(Map<String, Object> exclusion) {
     return Exclusion.firstCoversSecond(exclusion, _data);
   }
 
@@ -374,9 +343,5 @@ public class Row implements Comparable<Row>, Serializable {
   @Override
   public String toString() {
     return _data.toString();
-  }
-
-  public boolean hasNonNull(String column) {
-    return _data.hasNonNull(column);
   }
 }

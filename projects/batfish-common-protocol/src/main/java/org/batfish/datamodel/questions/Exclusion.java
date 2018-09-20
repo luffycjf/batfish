@@ -3,9 +3,10 @@ package org.batfish.datamodel.questions;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import org.batfish.common.BatfishException;
@@ -23,12 +24,12 @@ public class Exclusion {
 
   @Nonnull final String _name;
 
-  @Nonnull final ObjectNode _specification;
+  @Nonnull final Map<String, Object> _specification;
 
   @JsonCreator
   public Exclusion(
       @Nullable @JsonProperty(PROP_NAME) String name,
-      @Nonnull @JsonProperty(PROP_SPECIFICATION) ObjectNode exclusion) {
+      @Nonnull @JsonProperty(PROP_SPECIFICATION) Map<String, Object> exclusion) {
     _name = name == null ? exclusion.toString() : name;
     _specification = exclusion;
   }
@@ -110,8 +111,64 @@ public class Exclusion {
     }
   }
 
+  /**
+   * Evaluates if the first object covers the second object. For it to be true, the two objects
+   * should be of the same type and
+   *
+   * <p>i) If the type is atomic (e.g., string), should have equal values
+   *
+   * <p>ii) If the type is list, each element in the first object should cover some element in the
+   * second. ['a'] covers ['a', 'b'] but not the other way around.
+   *
+   * <p>iii) If the type is map, each key in the first object should be present in the second object
+   * and the corresponding first value should cover the second value. {'k1' : 'v1' } covers {'k1' :
+   * 'v1', 'k2': 'v2'} but not the other way around.
+   *
+   * @param first The first object
+   * @param second The second object
+   * @return Results of the evaluation
+   */
+  public static boolean firstCoversSecond(Object first, Object second) {
+    if (first instanceof Map) {
+      if (!(second instanceof Map)) {
+        return false;
+      }
+      Map<?, ?> firstMap = (Map<?, ?>) first;
+      Map<?, ?> secondMap = (Map<?, ?>) second;
+      for (Object key : firstMap.keySet()) {
+        if (!firstCoversSecond(firstMap.get(key), secondMap.get(key))) {
+          return false;
+        }
+      }
+      // if we are here, all first keys must exist in second and first values cover second values
+      return true;
+    } else if (first instanceof List) {
+      if (!(second instanceof List)) {
+        return false;
+      }
+      List<?> firstList = (List<?>) first;
+      List<?> secondList = (List<?>) second;
+      for (Object firstElement : firstList) {
+        boolean covered = false;
+        for (Object secondElement : secondList) {
+          if (firstCoversSecond(firstElement, secondElement)) {
+            covered = true;
+            break;
+          }
+        }
+        if (!covered) {
+          return false;
+        }
+      }
+      // if we are here, all first elements must be covered
+      return true;
+    } else {
+      return Objects.equals(first, second);
+    }
+  }
+
   @JsonProperty(PROP_SPECIFICATION)
-  public ObjectNode getExclusion() {
+  public Map<String, Object> getExclusion() {
     return _specification;
   }
 

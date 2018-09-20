@@ -90,4 +90,9 @@ public final class SchemaUtils {
     }
     return true;
   }
+
+  public static Object convertType(Object object, Schema schema) {
+    throw new UnsupportedOperationException(
+        "no implementation for generated method"); // TODO Auto-generated method stub
+  }
 }
