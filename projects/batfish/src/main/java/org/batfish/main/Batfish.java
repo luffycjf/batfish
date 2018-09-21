@@ -1,6 +1,7 @@
 package org.batfish.main;
 
 import static java.util.stream.Collectors.toMap;
+import static org.batfish.datamodel.acl.AclLineMatchExprs.not;
 import static org.batfish.datamodel.acl.SourcesReferencedByIpAccessLists.SOURCE_ORIGINATING_FROM_DEVICE;
 import static org.batfish.datamodel.acl.SourcesReferencedByIpAccessLists.referencedSources;
 import static org.batfish.main.ReachabilityParametersResolver.resolveReachabilityParameters;
@@ -121,6 +122,7 @@ import org.batfish.datamodel.SwitchportMode;
 import org.batfish.datamodel.Topology;
 import org.batfish.datamodel.Vrf;
 import org.batfish.datamodel.acl.AclExplainer;
+import org.batfish.datamodel.acl.AclLineMatchExpr;
 import org.batfish.datamodel.acl.MatchHeaderSpace;
 import org.batfish.datamodel.answers.Answer;
 import org.batfish.datamodel.answers.AnswerElement;
@@ -4095,6 +4097,14 @@ public class Batfish extends PluginConsumer implements IBatfish {
     boolean explain = reachFilterParameters.getGenerateExplanations();
 
     /*
+     * Explanations don't like the setNegate flag; so replace it with a NotMatchExpr.
+     */
+    AclLineMatchExpr invariantExpr =
+        headerSpace.getNegate()
+            ? not(new MatchHeaderSpace(headerSpace.toBuilder().setNegate(false).build()))
+            : new MatchHeaderSpace(headerSpace);
+
+    /*
      * Only generate an explanation if the differential headerspace is non-empty (i.e. we found a
      * flow).
      */
@@ -4108,7 +4118,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
                         : AclExplainer.explainDifferential(
                             bddPacket,
                             mgr,
-                            new MatchHeaderSpace(headerSpace),
+                            invariantExpr,
                             baseAcl,
                             baseConfig.getIpAccessLists(),
                             baseConfig.getIpSpaces(),
@@ -4126,7 +4136,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
                         : AclExplainer.explainDifferential(
                             bddPacket,
                             mgr,
-                            new MatchHeaderSpace(headerSpace),
+                            invariantExpr,
                             deltaAcl,
                             deltaConfig.getIpAccessLists(),
                             deltaConfig.getIpSpaces(),
@@ -4211,6 +4221,14 @@ public class Batfish extends PluginConsumer implements IBatfish {
             .and(headerSpaceBDD)
             .and(mgr.isSane());
 
+    /*
+     * Explanations don't like the setNegate flag; so replace it with a NotMatchExpr.
+     */
+    AclLineMatchExpr invariantExpr =
+        headerSpace.getNegate()
+            ? not(new MatchHeaderSpace(headerSpace.toBuilder().setNegate(false).build()))
+            : new MatchHeaderSpace(headerSpace);
+
     return getFlow(bddPacket, mgr, node.getHostname(), bdd)
         .map(
             flow ->
@@ -4220,7 +4238,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
                         ? AclExplainer.explain(
                             bddPacket,
                             mgr,
-                            new MatchHeaderSpace(headerSpace),
+                            invariantExpr,
                             acl,
                             node.getIpAccessLists(),
                             node.getIpSpaces())

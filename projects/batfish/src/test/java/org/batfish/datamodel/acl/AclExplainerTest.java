@@ -2,8 +2,10 @@ package org.batfish.datamodel.acl;
 
 import static org.batfish.datamodel.IpAccessListLine.accepting;
 import static org.batfish.datamodel.IpAccessListLine.rejecting;
+import static org.batfish.datamodel.acl.AclExplainer.specializeExplanation;
 import static org.batfish.datamodel.acl.AclLineMatchExprs.TRUE;
 import static org.batfish.datamodel.acl.AclLineMatchExprs.and;
+import static org.batfish.datamodel.acl.AclLineMatchExprs.match;
 import static org.batfish.datamodel.acl.AclLineMatchExprs.matchDstIp;
 import static org.batfish.datamodel.acl.AclLineMatchExprs.matchDstPrefix;
 import static org.batfish.datamodel.acl.AclLineMatchExprs.matchSrcIp;
@@ -18,7 +20,12 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import org.batfish.common.bdd.BDDPacket;
 import org.batfish.common.bdd.BDDSourceManager;
+import org.batfish.common.bdd.IpAccessListToBDD;
+import org.batfish.datamodel.HeaderSpace;
 import org.batfish.datamodel.IpAccessList;
+import org.batfish.datamodel.IpSpace;
+import org.batfish.datamodel.Prefix;
+import org.batfish.datamodel.SubRange;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -208,5 +215,42 @@ public class AclExplainerTest {
             .setLines(ImmutableList.of(accepting(matchDstPrefix24)))
             .build();
     assertThat(explainDifferential(denyAcl, permitAcl), equalTo(matchDstIp));
+  }
+
+  @Test
+  public void testSpecializeExplanation() {
+    // narrow positive space to negative space
+    IpAccessListToBDD ipAccessListToBDD =
+        new IpAccessListToBDD(_pkt, _mgr, ImmutableMap.of(), ImmutableMap.of());
+    SubRange ssh = new SubRange(22, 22);
+    SubRange ports80To88 = new SubRange(80, 88);
+    SubRange www = new SubRange(80, 80);
+    IpSpace dstIps = Prefix.parse("1.1.1.0/24").toIpSpace();
+    MatchHeaderSpace positiveSpace =
+        match(
+            HeaderSpace.builder()
+                .setDstIps(dstIps)
+                .setDstPorts(ImmutableList.of(ssh, ports80To88))
+                .build());
+    AclLineMatchExpr negativeSpace =
+        not(
+            match(
+                HeaderSpace.builder()
+                    .setDstIps(dstIps)
+                    .setDstPorts(ImmutableList.of(ssh, www))
+                    .build()));
+    AclLineMatchExpr expr = and(positiveSpace, negativeSpace);
+    AclLineMatchExpr specializedExpr =
+        specializeExplanation(ipAccessListToBDD, _mgr, ImmutableMap.of(), expr);
+    assertThat(
+        specializedExpr,
+        equalTo(
+            and(
+                match(
+                    HeaderSpace.builder()
+                        .setDstIps(dstIps)
+                        .setDstPorts(ImmutableList.of(ports80To88))
+                        .build()),
+                not(match(HeaderSpace.builder().setDstPorts(ImmutableList.of(www)).build())))));
   }
 }

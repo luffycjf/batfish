@@ -124,7 +124,9 @@ public final class AclExplanation {
 
   @VisibleForTesting
   void requireHeaderSpace(HeaderSpace headerSpace) {
-    if (_headerSpace == null) {
+    if (headerSpace.getNegate()) {
+      forbidHeaderSpace(headerSpace.toBuilder().setNegate(false).build());
+    } else if (_headerSpace == null) {
       _headerSpace = headerSpace;
     } else {
       Optional<HeaderSpace> intersection =
@@ -136,7 +138,11 @@ public final class AclExplanation {
 
   @VisibleForTesting
   void forbidHeaderSpace(HeaderSpace headerSpace) {
-    _notHeaderSpaces.add(headerSpace);
+    if (headerSpace.getNegate()) {
+      requireHeaderSpace(headerSpace.toBuilder().setNegate(false).build());
+    } else {
+      _notHeaderSpaces.add(headerSpace);
+    }
   }
 
   @VisibleForTesting

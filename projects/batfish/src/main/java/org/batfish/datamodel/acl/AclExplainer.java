@@ -1,10 +1,18 @@
 package org.batfish.datamodel.acl;
 
 import static org.batfish.datamodel.IpAccessListLine.rejecting;
+import static org.batfish.datamodel.acl.AclLineMatchExprNormalizer.normalize;
+import static org.batfish.datamodel.acl.AclLineMatchExprs.and;
 import static org.batfish.datamodel.acl.AclLineMatchExprs.not;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableSortedSet;
+import com.google.common.collect.Ordering;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.batfish.common.bdd.BDDPacket;
 import org.batfish.common.bdd.BDDSourceManager;
 import org.batfish.common.bdd.IpAccessListToBDD;
@@ -13,6 +21,8 @@ import org.batfish.datamodel.IpAccessList;
 import org.batfish.datamodel.IpAccessListLine;
 import org.batfish.datamodel.IpSpace;
 import org.batfish.datamodel.acl.normalize.AclToAclLineMatchExpr;
+import org.batfish.z3.BDDIpAccessListSpecializer;
+import org.batfish.z3.IpAccessListSpecializer;
 
 /**
  * Generate an explanation of the headerspace permitted by an {@link IpAccessList}. The explanation
@@ -55,9 +65,11 @@ public final class AclExplainer {
             differentialIpAccessList.getNamedIpSpaces());
 
     return explain(
+        mgr,
         ipAccessListToBDD,
         scopedAcl(invariantExpr, differentialIpAccessList.getAcl()),
-        differentialIpAccessList.getNamedAcls());
+        differentialIpAccessList.getNamedAcls(),
+        differentialIpAccessList.getNamedIpSpaces());
   }
 
   /**
@@ -77,20 +89,90 @@ public final class AclExplainer {
 
     IpAccessList aclWithInvariant = scopedAcl(invariantExpr, acl);
 
-    return explain(ipAccessListToBDD, aclWithInvariant, namedAcls);
+    return explain(mgr, ipAccessListToBDD, aclWithInvariant, namedAcls, namedIpSpaces);
   }
 
   private static AclLineMatchExpr explain(
-      IpAccessListToBDD ipAccessListToBDD, IpAccessList acl, Map<String, IpAccessList> namedAcls) {
+      BDDSourceManager mgr,
+      IpAccessListToBDD ipAccessListToBDD,
+      IpAccessList acl,
+      Map<String, IpAccessList> namedAcls,
+      Map<String, IpSpace> namedIpSpaces) {
     // Convert acl to a single expression.
     AclLineMatchExpr aclExpr =
         AclToAclLineMatchExpr.toAclLineMatchExpr(ipAccessListToBDD, acl, namedAcls);
 
     // Reduce that expression to normal form.
-    AclLineMatchExpr aclExprNf = AclLineMatchExprNormalizer.normalize(ipAccessListToBDD, aclExpr);
+    AclLineMatchExpr aclExprNf = normalize(ipAccessListToBDD, aclExpr);
 
-    // Simplify the normal form
-    return AclExplanation.explainNormalForm(aclExprNf);
+    /*
+     * Specialize each disjunct in the explanation to simplify further.
+     */
+    AclLineMatchExpr specializedNf =
+        aclExprNf instanceof OrMatchExpr
+            ? new OrMatchExpr(
+                ((OrMatchExpr) aclExprNf)
+                    .getDisjuncts()
+                    .stream()
+                    .map(expr -> specializeExplanation(ipAccessListToBDD, mgr, namedIpSpaces, expr))
+                    .collect(ImmutableSortedSet.toImmutableSortedSet(Ordering.natural())))
+            : specializeExplanation(ipAccessListToBDD, mgr, namedIpSpaces, aclExprNf);
+
+    // return specializedNf;
+    return AclExplanation.explainNormalForm(specializedNf);
+  }
+
+  @VisibleForTesting
+  static AclLineMatchExpr specializeExplanation(
+      IpAccessListToBDD ipAccessListToBDD,
+      BDDSourceManager mgr,
+      Map<String, IpSpace> namedIpSpaces,
+      AclLineMatchExpr expr) {
+    Set<AclLineMatchExpr> conjuncts =
+        expr instanceof AndMatchExpr ? ((AndMatchExpr) expr).getConjuncts() : ImmutableSet.of(expr);
+
+    Set<AclLineMatchExpr> positiveConjuncts =
+        conjuncts
+            .stream()
+            .filter(conj -> !(conj instanceof NotMatchExpr))
+            .collect(Collectors.toSet());
+    Set<AclLineMatchExpr> negativeConjuncts =
+        conjuncts.stream().filter(NotMatchExpr.class::isInstance).collect(Collectors.toSet());
+
+    /*
+     * First narrow the positive conjuncts to the space allowed by the negative conjuncts.
+     */
+    IpAccessListSpecializer specializer =
+        new BDDIpAccessListSpecializer(
+            ipAccessListToBDD.getBDDPacket(),
+            ipAccessListToBDD.visit(and(negativeConjuncts)),
+            namedIpSpaces,
+            mgr,
+            false);
+    positiveConjuncts =
+        positiveConjuncts.stream().map(specializer::visit).collect(Collectors.toSet());
+
+    /*
+     * Next, narrow the negative conjuncts to the space allowed by the positive conjuncts.
+     */
+    specializer =
+        new BDDIpAccessListSpecializer(
+            ipAccessListToBDD.getBDDPacket(),
+            ipAccessListToBDD.visit(and(positiveConjuncts)),
+            namedIpSpaces,
+            mgr,
+            true);
+    negativeConjuncts =
+        negativeConjuncts.stream().map(specializer::visit).collect(Collectors.toSet());
+
+    /*
+     * Now rebuild expr.
+     */
+    return new AndMatchExpr(
+        ImmutableSortedSet.<AclLineMatchExpr>orderedBy(Ordering.natural())
+            .addAll(positiveConjuncts)
+            .addAll(negativeConjuncts)
+            .build());
   }
 
   /**
