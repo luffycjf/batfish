@@ -418,7 +418,7 @@ public class IBatfishTestAdapter implements IBatfish {
 
   @Override
   public SpecifierContext specifierContext() {
-    return new SpecifierContextImpl(this, this.loadConfigurations());
+    throw new UnsupportedOperationException();
   }
 
   @Override
