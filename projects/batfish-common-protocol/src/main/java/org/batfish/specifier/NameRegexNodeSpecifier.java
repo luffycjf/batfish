@@ -1,15 +1,9 @@
 package org.batfish.specifier;
 
-import static java.util.Objects.requireNonNull;
-
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
 /** A {@link NodeSpecifier} that specifies the set of nodes whose names match the input regex. */
 public final class NameRegexNodeSpecifier implements NodeSpecifier {
@@ -17,19 +11,6 @@ public final class NameRegexNodeSpecifier implements NodeSpecifier {
 
   public NameRegexNodeSpecifier(Pattern namePattern) {
     _namePattern = namePattern;
-  }
-
-  private static final String PROP_NAME_PATTERN = "namePattern";
-
-  @JsonCreator
-  private static @Nonnull NameRegexNodeSpecifier create(
-      @JsonProperty(PROP_NAME_PATTERN) @Nullable String namePattern) {
-    return new NameRegexNodeSpecifier(Pattern.compile(requireNonNull(namePattern)));
-  }
-
-  @JsonProperty(PROP_NAME_PATTERN)
-  public @Nonnull String getNamePattern() {
-    return _namePattern.pattern();
   }
 
   @Override
