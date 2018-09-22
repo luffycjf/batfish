@@ -50,7 +50,6 @@ import org.batfish.referencelibrary.ReferenceLibrary;
 import org.batfish.role.NodeRoleDimension;
 import org.batfish.role.NodeRolesData;
 import org.batfish.specifier.SpecifierContext;
-import org.batfish.specifier.SpecifierContextImpl;
 
 /**
  * A helper for tests that need an {@link IBatfish} implementation. Extend this and implement the
