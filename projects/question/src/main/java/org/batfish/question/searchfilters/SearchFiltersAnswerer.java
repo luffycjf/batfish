@@ -1,4 +1,4 @@
-package org.batfish.question.reachfilter;
+package org.batfish.question.searchfilters;
 
 import static org.batfish.question.testfilters.TestFiltersAnswerer.COL_FILTER_NAME;
 import static org.batfish.question.testfilters.TestFiltersAnswerer.COL_NODE;
@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.stream.Stream;
+import javax.annotation.Nullable;
 import org.batfish.common.Answerer;
 import org.batfish.common.BatfishException;
 import org.batfish.common.Pair;
@@ -39,43 +40,39 @@ import org.batfish.datamodel.answers.Schema;
 import org.batfish.datamodel.questions.Question;
 import org.batfish.datamodel.table.ColumnMetadata;
 import org.batfish.datamodel.table.Row;
+import org.batfish.datamodel.table.Row.RowBuilder;
 import org.batfish.datamodel.table.TableAnswerElement;
 import org.batfish.datamodel.table.TableDiff;
 import org.batfish.datamodel.table.TableMetadata;
-import org.batfish.question.ReachFilterParameters;
+import org.batfish.question.SearchFiltersParameters;
 import org.batfish.question.testfilters.TestFiltersAnswerer;
 import org.batfish.question.testfilters.TestFiltersQuestion;
 import org.batfish.specifier.FilterSpecifier;
 import org.batfish.specifier.SpecifierContext;
 
-/** Answerer for ReachFilterQuestion */
-public final class ReachFilterAnswerer extends Answerer {
-  private static final String HEADERSPACE = "HeaderSpace";
-
+/** Answerer for SearchFiltersQuestion */
+public final class SearchFiltersAnswerer extends Answerer {
+  private static final String COL_HEADER_SPACE = "Header_Space";
   private TableAnswerElement _tableAnswerElement;
 
-  public ReachFilterAnswerer(Question question, IBatfish batfish) {
+  public SearchFiltersAnswerer(Question question, IBatfish batfish) {
     super(question, batfish);
   }
 
   @Override
   public AnswerElement answer() {
-    ReachFilterQuestion question = (ReachFilterQuestion) _question;
-    if (question.getDifferential()) {
-      differentialAnswer(question);
-    } else {
-      nonDifferentialAnswer(question);
-    }
+    SearchFiltersQuestion question = (SearchFiltersQuestion) _question;
+    nonDifferentialAnswer(question);
     return _tableAnswerElement;
   }
 
   @Override
   public AnswerElement answerDiff() {
-    differentialAnswer((ReachFilterQuestion) _question);
+    differentialAnswer((SearchFiltersQuestion) _question);
     return _tableAnswerElement;
   }
 
-  private void differentialAnswer(ReachFilterQuestion question) {
+  private void differentialAnswer(SearchFiltersQuestion question) {
     _batfish.pushBaseEnvironment();
     Map<String, Configuration> baseConfigs = _batfish.loadConfigurations();
     Multimap<String, String> baseAcls = getSpecifiedAcls(question);
@@ -86,14 +83,16 @@ public final class ReachFilterAnswerer extends Answerer {
     Multimap<String, String> deltaAcls = getSpecifiedAcls(question);
     _batfish.popEnvironment();
 
-    ReachFilterParameters parameters = question.toReachFilterParameters();
+    SearchFiltersParameters parameters = question.toSearchFiltersParameters();
 
     TableAnswerElement baseTable =
-        toReachFilterTable(
-            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)));
+        toSearchFiltersTable(
+            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)),
+            question.getGenerateExplanations());
     TableAnswerElement deltaTable =
-        toReachFilterTable(
-            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)));
+        toSearchFiltersTable(
+            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)),
+            question.getGenerateExplanations());
 
     Set<String> commonNodes = Sets.intersection(baseAcls.keySet(), deltaAcls.keySet());
     for (String node : commonNodes) {
@@ -128,7 +127,7 @@ public final class ReachFilterAnswerer extends Answerer {
         }
 
         // present in both snapshot
-        DifferentialReachFilterResult results =
+        DifferentialSearchFiltersResult results =
             _batfish.differentialReachFilter(
                 baseConfig, baseAcl.get(), deltaConfig, deltaAcl.get(), parameters);
 
@@ -140,12 +139,15 @@ public final class ReachFilterAnswerer extends Answerer {
                   Flow flow = result.getExampleFlow();
                   AclLineMatchExpr description = result.getHeaderSpaceDescription().orElse(null);
                   baseTable.addRow(
-                      toReachFilterRow(
-                          description, testFiltersRow(true, node, baseAcl.get().getName(), flow)));
-                  deltaTable.addRow(
-                      toReachFilterRow(
+                      toSearchFiltersRow(
                           description,
-                          testFiltersRow(false, node, deltaAcl.get().getName(), flow)));
+                          testFiltersRow(true, node, baseAcl.get().getName(), flow),
+                          question.getGenerateExplanations()));
+                  deltaTable.addRow(
+                      toSearchFiltersRow(
+                          description,
+                          testFiltersRow(false, node, deltaAcl.get().getName(), flow),
+                          question.getGenerateExplanations()));
                 });
       }
     }
@@ -163,14 +165,17 @@ public final class ReachFilterAnswerer extends Answerer {
     _tableAnswerElement.postProcessAnswer(question, diffTable.getRows().getData());
   }
 
-  private static TableAnswerElement toReachFilterTable(TableAnswerElement tableAnswerElement) {
+  private static TableAnswerElement toSearchFiltersTable(
+      TableAnswerElement tableAnswerElement, boolean generateExplanation) {
     Map<String, ColumnMetadata> columnMap = tableAnswerElement.getMetadata().toColumnMap();
 
     List<ColumnMetadata> columnMetadata = new ArrayList<>();
     columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_NODE));
     columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_FILTER_NAME));
-    columnMetadata.add(
-        new ColumnMetadata(HEADERSPACE, Schema.STRING, "Description of HeaderSpace"));
+    if (generateExplanation) {
+      columnMetadata.add(
+          new ColumnMetadata(COL_HEADER_SPACE, Schema.STRING, "Description of HeaderSpace"));
+    }
     columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_FLOW));
     columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_ACTION));
     columnMetadata.add(columnMap.get(TestFiltersAnswerer.COL_LINE_CONTENT));
@@ -180,25 +185,30 @@ public final class ReachFilterAnswerer extends Answerer {
     return new TableAnswerElement(metadata);
   }
 
-  private static Row toReachFilterRow(AclLineMatchExpr description, Row row) {
-    /*
-     * Sending the explanation to the client as a JSON blob. TODO: do something better.
-     */
-    String jsonDescription;
-    try {
-      jsonDescription = BatfishObjectMapper.writeString(description);
-    } catch (JsonProcessingException e) {
-      e.printStackTrace();
-      jsonDescription = e.getMessage();
+  private static Row toSearchFiltersRow(
+      @Nullable AclLineMatchExpr description, Row row, boolean generateExplanations) {
+
+    RowBuilder rowBuilder = Row.builder().putAll(row, row.getColumnNames());
+
+    if (generateExplanations) {
+      /*
+       * Sending the explanation to the client as a JSON blob. TODO: do something better.
+       */
+      String jsonDescription;
+      try {
+        jsonDescription = BatfishObjectMapper.writeString(description);
+      } catch (JsonProcessingException e) {
+        e.printStackTrace();
+        jsonDescription = e.getMessage();
+      }
+
+      rowBuilder.put(COL_HEADER_SPACE, jsonDescription);
     }
 
-    return Row.builder()
-        .putAll(row, row.getColumnNames())
-        .put(HEADERSPACE, jsonDescription)
-        .build();
+    return rowBuilder.build();
   }
 
-  private void nonDifferentialAnswer(ReachFilterQuestion question) {
+  private void nonDifferentialAnswer(SearchFiltersQuestion question) {
     List<Pair<String, IpAccessList>> acls = getQueryAcls(question);
     if (acls.isEmpty()) {
       throw new BatfishException("No matching filters");
@@ -214,9 +224,9 @@ public final class ReachFilterAnswerer extends Answerer {
       String hostname = pair.getFirst();
       Configuration node = configurations.get(hostname);
       IpAccessList acl = pair.getSecond();
-      Optional<ReachFilterResult> optionalResult;
+      Optional<SearchFiltersResult> optionalResult;
       try {
-        optionalResult = _batfish.reachFilter(node, acl, question.toReachFilterParameters());
+        optionalResult = _batfish.reachFilter(node, acl, question.toSearchFiltersParameters());
       } catch (Throwable t) {
         _batfish.getLogger().warn(t.getMessage());
         continue;
@@ -224,18 +234,20 @@ public final class ReachFilterAnswerer extends Answerer {
       optionalResult.ifPresent(
           result ->
               rows.add(
-                  toReachFilterRow(
+                  toSearchFiltersRow(
                       result.getHeaderSpaceDescription().orElse(null),
-                      testFiltersRow(true, hostname, acl.getName(), result.getExampleFlow()))));
+                      testFiltersRow(true, hostname, acl.getName(), result.getExampleFlow()),
+                      question.getGenerateExplanations())));
     }
 
     _tableAnswerElement =
-        toReachFilterTable(
-            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)));
+        toSearchFiltersTable(
+            TestFiltersAnswerer.create(new TestFiltersQuestion(null, null, null, null)),
+            question.getGenerateExplanations());
     _tableAnswerElement.postProcessAnswer(question, rows);
   }
 
-  private Multimap<String, String> getSpecifiedAcls(ReachFilterQuestion question) {
+  private Multimap<String, String> getSpecifiedAcls(SearchFiltersQuestion question) {
     SortedMap<String, Configuration> configs = _batfish.loadConfigurations();
     FilterSpecifier filterSpecifier = question.getFilterSpecifier();
     SpecifierContext specifierContext = _batfish.specifierContext();
@@ -254,7 +266,7 @@ public final class ReachFilterAnswerer extends Answerer {
   }
 
   private Optional<IpAccessList> makeQueryAcl(IpAccessList originalAcl) {
-    ReachFilterQuestion question = (ReachFilterQuestion) _question;
+    SearchFiltersQuestion question = (SearchFiltersQuestion) _question;
     switch (question.getType()) {
       case PERMIT:
         return Optional.of(originalAcl);
@@ -274,7 +286,7 @@ public final class ReachFilterAnswerer extends Answerer {
   }
 
   @VisibleForTesting
-  List<Pair<String, IpAccessList>> getQueryAcls(ReachFilterQuestion question) {
+  List<Pair<String, IpAccessList>> getQueryAcls(SearchFiltersQuestion question) {
     Map<String, Configuration> configs = _batfish.loadConfigurations();
     return getSpecifiedAcls(question)
         .entries()
