@@ -436,7 +436,7 @@ public class IBatfishTestAdapter implements IBatfish {
   }
 
   @Override
-  public @Nullable String loadQuestionSettings(@Nonnull Class<? extends Question> questionClass) {
+  public @Nullable String loadQuestionSettings(@Nonnull Question question) {
     throw new UnsupportedOperationException();
   }
 
