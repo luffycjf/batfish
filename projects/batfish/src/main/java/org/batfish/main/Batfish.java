@@ -1597,23 +1597,22 @@ public class Batfish extends PluginConsumer implements IBatfish {
   }
 
   /**
-   * Gets the {@link NodeRolesData} for the testrig
-   *
-   * @return The {@link NodeRolesData} object.
+   * Gets the {@link NodeRolesData} for the network. Returns empty {@link NodeRolesData} if none
+   * exists or the roles cannot be read.
    */
   @Override
-  public NodeRolesData getNodeRolesData() {
+  public @Nonnull NodeRolesData getNodeRolesData() {
     try {
       NetworkId networkId = _settings.getContainer();
       if (!_idResolver.hasNetworkNodeRolesId(networkId)) {
-        return null;
+        return new NodeRolesData(null, null);
       }
       NodeRolesId nodeRolesId = _idResolver.getNetworkNodeRolesId(networkId);
       return BatfishObjectMapper.mapper()
           .readValue(_storage.loadNodeRoles(nodeRolesId), NodeRolesData.class);
     } catch (IOException e) {
       _logger.errorf("Could not read roles data: %s", e);
-      return null;
+      return new NodeRolesData(null, null);
     }
   }
 

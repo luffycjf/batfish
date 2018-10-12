@@ -106,6 +106,7 @@ import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
 import org.codehaus.jettison.json.JSONTokener;
+import org.glassfish.grizzly.http.Method;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReader.Option;
@@ -2419,6 +2420,14 @@ public class Client extends AbstractClient implements IClient {
         return clearScreen(options, parameters);
       case CONFIGURE_TEMPLATE:
         return configureTemplate(words, outWriter, options, parameters);
+      case DEBUG_DELETE:
+        return debugDelete(outWriter, options, parameters);
+      case DEBUG_GET:
+        return debugGet(outWriter, options, parameters);
+      case DEBUG_POST:
+        return debugPost(outWriter, options, parameters);
+      case DEBUG_PUT:
+        return debugPut(outWriter, options, parameters);
       case DEL_ANALYSIS:
         return delAnalysis(outWriter, options, parameters);
       case DEL_ANALYSIS_QUESTIONS:
@@ -2594,6 +2603,96 @@ public class Client extends AbstractClient implements IClient {
         _logger.errorf("Unsupported command %s\n", words[0]);
         _logger.error("Type 'help' to see the list of valid commands\n");
         return false;
+    }
+  }
+
+  private boolean debugDelete(FileWriter outWriter, List<String> options, List<String> parameters) {
+    if (!isValidArgument(options, parameters, 0, 1, 1, Command.DEBUG_DELETE)) {
+      return false;
+    }
+    String urlTail = parameters.get(0);
+    try {
+      return _workHelper.debugV2(outWriter, Method.DELETE, urlTail, null);
+    } catch (IOException e) {
+      _logger.error(Throwables.getStackTraceAsString(e));
+      return false;
+    }
+  }
+
+  private boolean debugGet(FileWriter outWriter, List<String> options, List<String> parameters) {
+    if (!isValidArgument(options, parameters, 0, 1, 1, Command.DEBUG_GET)) {
+      return false;
+    }
+    String urlTail = parameters.get(0);
+    try {
+      return _workHelper.debugV2(outWriter, Method.GET, urlTail, null);
+    } catch (IOException e) {
+      _logger.error(Throwables.getStackTraceAsString(e));
+      return false;
+    }
+  }
+
+  private boolean debugPost(FileWriter outWriter, List<String> options, List<String> parameters) {
+    if (!isValidArgument(options, parameters, 1, 2, 2, Command.DEBUG_POST)) {
+      return false;
+    }
+    boolean file = false;
+    if (options.size() == 1) {
+      if (options.get(0).equals("-file")) {
+        file = true;
+      } else {
+        _logger.errorf("Unknown option: %s\n", options.get(0));
+        printUsage(Command.DEBUG_POST);
+        return false;
+      }
+    }
+    String urlTail = parameters.get(0);
+    String entityParam = parameters.get(1);
+    String input = file ? CommonUtil.readFile(Paths.get(entityParam)) : entityParam;
+    JsonNode entity;
+    try {
+      entity = BatfishObjectMapper.mapper().readTree(input);
+    } catch (IOException e) {
+      _logger.error(Throwables.getStackTraceAsString(e));
+      return false;
+    }
+    try {
+      return _workHelper.debugV2(outWriter, Method.POST, urlTail, entity);
+    } catch (IOException e) {
+      _logger.error(Throwables.getStackTraceAsString(e));
+      return false;
+    }
+  }
+
+  private boolean debugPut(FileWriter outWriter, List<String> options, List<String> parameters) {
+    if (!isValidArgument(options, parameters, 1, 2, 2, Command.DEBUG_PUT)) {
+      return false;
+    }
+    boolean file = false;
+    if (options.size() == 1) {
+      if (options.get(0).equals("-file")) {
+        file = true;
+      } else {
+        _logger.errorf("Unknown option: %s\n", options.get(0));
+        printUsage(Command.DEBUG_PUT);
+        return false;
+      }
+    }
+    String urlTail = parameters.get(0);
+    String entityParam = parameters.get(1);
+    String input = file ? CommonUtil.readFile(Paths.get(entityParam)) : entityParam;
+    JsonNode entity;
+    try {
+      entity = BatfishObjectMapper.mapper().readTree(input);
+    } catch (IOException e) {
+      _logger.error(Throwables.getStackTraceAsString(e));
+      return false;
+    }
+    try {
+      return _workHelper.debugV2(outWriter, Method.PUT, urlTail, entity);
+    } catch (IOException e) {
+      _logger.error(Throwables.getStackTraceAsString(e));
+      return false;
     }
   }
 

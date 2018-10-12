@@ -144,7 +144,7 @@ public class NodesSpecifier {
    * @return A list of {@link AutocompleteSuggestion} objects
    */
   public static List<AutocompleteSuggestion> autoComplete(
-      String query, Set<String> nodes, NodeRolesData nodeRoleData) {
+      String query, Set<String> nodes, @Nonnull NodeRolesData nodeRoleData) {
     final String finalQuery = query == null ? "" : query;
 
     // fill in types; will produce something only with finalQuery is empty or something like "NA"
@@ -177,7 +177,7 @@ public class NodesSpecifier {
       }
     }
 
-    if (finalQuery.toUpperCase().startsWith("ROLE:") && nodeRoleData != null) { // ROLE query
+    if (finalQuery.toUpperCase().startsWith("ROLE:")) { // ROLE query
       if (parts.length == 3 || (parts.length == 2 && finalQuery.endsWith(":"))) {
         String roleDimension = parts[1];
         Optional<NodeRoleDimension> optDimension =

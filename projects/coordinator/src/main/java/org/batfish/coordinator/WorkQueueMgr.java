@@ -432,10 +432,13 @@ public class WorkQueueMgr {
           WorkItem wItem = work.getWorkItem();
           WorkDetails wDetails = work.getDetails();
           if (wDetails.workType == WorkType.PARSING) {
-            ProcessingStatus status =
-                (task.getStatus() == TaskStatus.TerminatedNormally)
-                    ? ProcessingStatus.PARSED
-                    : ProcessingStatus.PARSING_FAIL;
+            ProcessingStatus status;
+            if (task.getStatus() == TaskStatus.TerminatedNormally) {
+              status = ProcessingStatus.PARSED;
+              updateNetworkNodeRoles(wItem.getContainerName(), wItem.getTestrigName());
+            } else {
+              status = ProcessingStatus.PARSING_FAIL;
+            }
             WorkQueueMgr.updateEnvironmentStatus(
                 wItem.getContainerName(),
                 wDetails.baseTestrig,
@@ -556,6 +559,10 @@ public class WorkQueueMgr {
         throw new BatfishException(
             "Unhandled " + TaskStatus.class.getCanonicalName() + ": " + task.getStatus());
     }
+  }
+
+  private void updateNetworkNodeRoles(String networkIdStr, String snapshotIdStr) {
+    Main.getWorkMgr().updateNetworkNodeRoles(networkIdStr, snapshotIdStr);
   }
 
   private boolean queueDependentAnsweringWork(QueuedWork work, boolean dataplaneDependent)

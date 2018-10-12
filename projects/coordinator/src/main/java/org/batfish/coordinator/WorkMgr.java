@@ -2563,4 +2563,14 @@ public class WorkMgr extends AbstractCoordinator {
     _idManager.assignNetworkNodeRolesId(networkId, networkNodeRolesId);
     return true;
   }
+
+  public void updateNetworkNodeRoles(String networkIdStr, String snapshotIdStr) {
+    NetworkId networkId = new NetworkId(networkIdStr);
+    if (_idManager.hasNetworkNodeRolesId(networkId)) {
+      return;
+    }
+    SnapshotId snapshotId = new SnapshotId(snapshotIdStr);
+    NodeRolesId snapshotNodeRolesId = _idManager.getSnapshotNodeRolesId(networkId, snapshotId);
+    _idManager.assignNetworkNodeRolesId(networkId, snapshotNodeRolesId);
+  }
 }

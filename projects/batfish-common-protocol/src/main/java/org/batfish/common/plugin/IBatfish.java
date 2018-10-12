@@ -106,6 +106,7 @@ public interface IBatfish extends IPluginConsumer {
   @Nullable
   Layer2Topology getLayer2Topology();
 
+  @Nonnull
   NodeRolesData getNodeRolesData();
 
   Optional<NodeRoleDimension> getNodeRoleDimension(String roleDimension);
