@@ -11,7 +11,24 @@ Batfish is a network configuration analysis tool that can find bugs and guarante
 
 ## How do I get started?
 
-The quickest way to get started is using pre-built [Docker containers](https://github.com/batfish/docker/). Or, you can [build from sources](https://github.com/batfish/batfish/wiki).
+The quickest way to get started is using [Pybatfish](https://github.com/batfish/pybatfish) with a pre-built [Batfish Docker container](https://github.com/batfish/docker/) (or, you can [build Batfish from sources](https://github.com/batfish/batfish/wiki)):
+1. Launch the `Batfish` docker container:
+    ```
+    mkdir -p data
+    docker run -v $(pwd)/data:/data -p 9997:9997 -p 9996:9996 batfish/batfish
+    ```
+2. Setup `Pybatfish` on your host machine:
+    ```
+    git clone https://github.com/batfish/pybatfish.git
+    cd pybatfish
+    pip install .
+    ```
+3. Connect to `Batfish` using `Pybatfish` in an interactive python shell like IPython:
+    ```
+    %run jupyter_notebooks/startup.py
+    snapshot = bf_init_snapshot('jupyter_notebooks/network/example')
+    ```
+    Take a look at the [Pybatfish notebooks](https://github.com/batfish/pybatfish/tree/master/jupyter_notebooks) to see examples of analysis that can be done with `Batfish` and `Pybatfish`.
 
 Batfish is also available as a supported service by [Intentionet](https://www.intentionet.com). Drop a line to [info@intentionet.com](mailto:info@intentionet.com) for more information.
 
