@@ -1229,7 +1229,8 @@ public class BfCoordWorkHelper {
     }
   }
 
-  public boolean debugV2(FileWriter outWriter, Method method, String urlTail, Object entity)
+  public boolean debugV2(
+      FileWriter outWriter, Method method, String urlTail, Object entity, String mediaType)
       throws IOException {
     WebTarget webTarget = getTargetV2(Arrays.asList(urlTail.split("/", -1)));
     Invocation.Builder builder =
@@ -1239,8 +1240,7 @@ public class BfCoordWorkHelper {
             .header(CoordConstsV2.HTTP_HEADER_BATFISH_VERSION, Version.getVersion());
     try (Response response =
         entity != null
-            ? builder.method(
-                method.getMethodString(), Entity.entity(entity, MediaType.APPLICATION_JSON))
+            ? builder.method(method.getMethodString(), Entity.entity(entity, mediaType))
             : builder.method(method.getMethodString())) {
       if (response.hasEntity()) {
         String output = response.readEntity(String.class);

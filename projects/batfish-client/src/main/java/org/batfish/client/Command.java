@@ -220,6 +220,22 @@ public enum Command {
         new Pair<>(
             "<new-template-name> <old-template-name> [exceptions=[...],] [assertion={..}]",
             "Create a new template from the old template with provided exceptions and assertion"));
+    descs.put(
+        DEBUG_DELETE,
+        new Pair<>("<work-manager-v2-url>", "Executes DELETE method at <work-manager-v2-url>"));
+    descs.put(
+        DEBUG_GET,
+        new Pair<>("<work-manager-v2-url>", "Executes GET method at <work-manager-v2-url>"));
+    descs.put(
+        DEBUG_POST,
+        new Pair<>(
+            "[-file [-raw]] <work-manager-v2-url> <input>",
+            "Posts <input> to <work-manager-v2-url>. If -file is set, treats input as a path and sends the contents of the file at that path. If -raw is set, uses 'application/octet-stream'; else uses 'application/json'."));
+    descs.put(
+        DEBUG_PUT,
+        new Pair<>(
+            "[-file [-raw]] <work-manager-v2-url> <input>",
+            "Puts <input> at <work-manager-v2-url>. If -file is set, treats input as a path and sends the contents of the file at that path. If -raw is set, uses 'application/octet-stream'; else uses 'application/json'."));
     descs.put(DEL_ANALYSIS, new Pair<>("<analysis-name>", "Delete the analysis completely"));
     descs.put(
         DEL_ANALYSIS_QUESTIONS,
