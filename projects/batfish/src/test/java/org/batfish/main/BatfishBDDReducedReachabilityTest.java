@@ -22,6 +22,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 
 import com.google.common.collect.ImmutableList;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.SortedMap;
 import org.batfish.datamodel.Configuration;
+import org.batfish.datamodel.Fib;
 import org.batfish.datamodel.Flow;
 import org.batfish.datamodel.FlowDisposition;
 import org.batfish.datamodel.FlowTrace;
@@ -549,5 +551,39 @@ public class BatfishBDDReducedReachabilityTest {
                     hasIngressInterface(PHYSICAL),
                     hasSrcIp(NODE1_PHYSICAL_LINK_IP)))));
     checkDispositions(batfish, flows, NULL_ROUTED);
+  }
+
+  class FibBugNetworkGenerator implements NetworkGenerator {
+    @Override
+    public SortedMap<String, Configuration> generateConfigs(boolean delta) {
+      Configuration node1 = _cb.setHostname(NODE1).build();
+      Vrf v1 = _vb.setOwner(node1).build();
+      _ib.setOwner(node1).setVrf(v1);
+      _ib.setName(PHYSICAL).setAddresses(NODE1_PHYSICAL_NETWORK).build();
+      Ip nullRouteIp = new Ip("4.4.4.4");
+      v1.setStaticRoutes(
+          ImmutableSortedSet.of(
+              StaticRoute.builder()
+                  .setNetwork(new Prefix(DST_IP, 32))
+                  .setNextHopInterface(PHYSICAL)
+                  .setNextHopIp(nullRouteIp)
+                  .setAdministrativeCost(1)
+                  .build(),
+              StaticRoute.builder()
+                  .setNetwork(new Prefix(nullRouteIp, 32))
+                  .setNextHopInterface(NULL_INTERFACE_NAME)
+                  .setAdministrativeCost(1)
+                  .build()));
+
+      return ImmutableSortedMap.of(NODE1, node1);
+    }
+  }
+
+  @Test
+  public void testFibBug() throws IOException {
+    Batfish batfish = initBatfish(new FibBugNetworkGenerator());
+    Fib fib = batfish.loadDataPlane().getFibs().get(NODE1).get(DEFAULT_VRF_NAME);
+    Set<String> nextHopInterfaces = fib.getNextHopInterfaces(new Ip("4.4.4.4"));
+    assertThat(nextHopInterfaces, equalTo(ImmutableSet.of(PHYSICAL)));
   }
 }
