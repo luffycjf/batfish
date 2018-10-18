@@ -112,6 +112,8 @@ public class ReducedReachabilityAnswerer extends Answerer {
     DifferentialReachabilityResult result = _batfish.bddReducedReachability(parameters());
 
     long decreasedReachStart = System.currentTimeMillis();
+    System.out.println("bddReducedReachability: " + (decreasedReachStart - startTime) + " ms");
+
     Set<Flow> decreasedReachFlows = result.getDecreasedReachabilityFlows();
     long decreasedReachEnd = System.currentTimeMillis();
     System.out.println(
