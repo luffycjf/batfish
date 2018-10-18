@@ -108,22 +108,51 @@ public class ReducedReachabilityAnswerer extends Answerer {
 
   @Override
   public TableAnswerElement answerDiff() {
+    long startTime = System.currentTimeMillis();
     DifferentialReachabilityResult result = _batfish.bddReducedReachability(parameters());
 
-    Set<Flow> flows =
-        Sets.union(result.getDecreasedReachabilityFlows(), result.getIncreasedReachabilityFlows());
+    long decreasedReachStart = System.currentTimeMillis();
+    Set<Flow> decreasedReachFlows = result.getDecreasedReachabilityFlows();
+    long decreasedReachEnd = System.currentTimeMillis();
+    System.out.println(
+        "getDecreasedReachabilityFlows: " + (decreasedReachEnd - decreasedReachStart) + " ms");
+    Set<Flow> increasedReachFlows = result.getIncreasedReachabilityFlows();
+    System.out.println(
+        "getIncreasedReachabilityFlows: "
+            + (System.currentTimeMillis() - decreasedReachEnd)
+            + " ms");
+
+    Set<Flow> flows = Sets.union(decreasedReachFlows, increasedReachFlows);
 
     _batfish.pushBaseSnapshot();
+
+    long processFlowsStart = System.currentTimeMillis();
+
     _batfish.processFlows(flows, false);
+
+    System.out.println(
+        "processFlows for base: " + (System.currentTimeMillis() - processFlowsStart) + " ms");
+
     _batfish.popSnapshot();
     _batfish.pushDeltaSnapshot();
+
+    processFlowsStart = System.currentTimeMillis();
     _batfish.processFlows(flows, false);
+    System.out.println(
+        "processFlows for delta: " + (System.currentTimeMillis() - processFlowsStart) + " ms");
+
     _batfish.popSnapshot();
 
     FlowHistory flowHistory = _batfish.getHistory();
     Multiset<Row> rows = flowHistoryToRows(flowHistory);
     TableAnswerElement table = new TableAnswerElement(createMetadata());
     table.postProcessAnswer(_question, rows);
+
+    System.out.println(
+        "Total reducedReachability.answerDiff() time: "
+            + (System.currentTimeMillis() - startTime)
+            + " ms");
+
     return table;
   }
 
