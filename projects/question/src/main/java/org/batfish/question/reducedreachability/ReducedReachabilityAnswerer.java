@@ -145,9 +145,14 @@ public class ReducedReachabilityAnswerer extends Answerer {
 
     _batfish.popSnapshot();
 
+    long historyStart = System.currentTimeMillis();
     FlowHistory flowHistory = _batfish.getHistory();
     Multiset<Row> rows = flowHistoryToRows(flowHistory);
+    long historyEnd = System.currentTimeMillis();
+    System.out.println("Total history time: " + (historyEnd - historyStart) + " ms");
     TableAnswerElement table = new TableAnswerElement(createMetadata());
+    long tableEnd = System.currentTimeMillis();
+    System.out.println("Total tableAnswerElement time: " + (tableEnd - historyEnd) + " ms");
     table.postProcessAnswer(_question, rows);
 
     System.out.println(
