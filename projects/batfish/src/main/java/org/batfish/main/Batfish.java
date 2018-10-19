@@ -21,8 +21,10 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
+import com.google.common.collect.TreeMultimap;
 import io.opentracing.ActiveSpan;
 import io.opentracing.util.GlobalTracer;
 import java.io.File;
@@ -427,6 +429,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
 
   private BatfishLogger _logger;
 
+  private Multimap<String, String> _serializedConfigMap;
+
   private Settings _settings;
 
   private final StorageProvider _storage;
@@ -477,6 +481,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
         alternateIdResolver != null
             ? alternateIdResolver
             : new FileBasedIdResolver(_settings.getStorageBase());
+    _serializedConfigMap = TreeMultimap.create();
   }
 
   private Answer analyze() {
@@ -3255,6 +3260,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
         (name, vc) -> {
           Path currentOutputPath = outputPath.resolve(name);
           output.put(currentOutputPath, vc);
+          _serializedConfigMap.put(
+              name, Paths.get(BfConsts.RELPATH_HOST_CONFIGS_DIR, vc.getFilename()).toString());
         });
     serializeObjects(output);
     // serialize warnings
@@ -3351,10 +3358,16 @@ public class Batfish extends PluginConsumer implements IBatfish {
             if (overlayConfig != null) {
               vc.setOverlayConfiguration(overlayConfig);
               overlayHostConfigurations.remove(name);
+              _serializedConfigMap.put(
+                  name,
+                  Paths.get(BfConsts.RELPATH_HOST_CONFIGS_DIR, overlayConfig.getFilename())
+                      .toString());
             }
 
             Path currentOutputPath = outputPath.resolve(name);
             output.put(currentOutputPath, vc);
+            _serializedConfigMap.put(
+                name, Paths.get(BfConsts.RELPATH_CONFIGURATIONS_DIR, vc.getFilename()).toString());
           }
         });
 
