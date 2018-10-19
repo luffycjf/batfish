@@ -2076,15 +2076,21 @@ public class Batfish extends PluginConsumer implements IBatfish {
 
   private AwsConfiguration parseAwsConfigurations(Map<Path, String> configurationData) {
     AwsConfiguration config = new AwsConfiguration();
+
+    // Something like
+    // String filename =
+    // _settings.getActiveTestrigSettings().getInputPath().relativize(currentFile).toString();
     for (Entry<Path, String> configFile : configurationData.entrySet()) {
       Path file = configFile.getKey();
+      String filename =
+          _settings.getActiveTestrigSettings().getInputPath().relativize(file).toString();
       String fileText = configFile.getValue();
       String regionName = file.getName(file.getNameCount() - 2).toString(); // parent dir name
 
       // we stop classic link processing here because it interferes with VPC
       // processing
-      if (file.toString().contains("classic-link")) {
-        _logger.errorf("%s has classic link configuration\n", file);
+      if (filename.contains("classic-link")) {
+        _logger.errorf("%s has classic link configuration\n", filename);
         continue;
       }
 
@@ -2092,14 +2098,15 @@ public class Batfish extends PluginConsumer implements IBatfish {
       try {
         jsonObj = new JSONObject(fileText);
       } catch (JSONException e) {
-        _logger.errorf("%s does not have valid json\n", file);
+        _logger.errorf("%s does not have valid json\n", filename);
       }
 
       if (jsonObj != null) {
         try {
           config.addConfigElement(regionName, jsonObj, _logger);
+          _serializedConfigMap.put(BfConsts.RELPATH_AWS_CONFIGS_FILE, filename);
         } catch (JSONException e) {
-          throw new BatfishException("Problems parsing JSON in " + file, e);
+          throw new BatfishException("Problems parsing JSON in " + filename, e);
         }
       }
     }
@@ -3260,8 +3267,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
         (name, vc) -> {
           Path currentOutputPath = outputPath.resolve(name);
           output.put(currentOutputPath, vc);
-          _serializedConfigMap.put(
-              name, Paths.get(BfConsts.RELPATH_HOST_CONFIGS_DIR, vc.getFilename()).toString());
+          _serializedConfigMap.put(name, vc.getFilename());
         });
     serializeObjects(output);
     // serialize warnings
@@ -3358,16 +3364,12 @@ public class Batfish extends PluginConsumer implements IBatfish {
             if (overlayConfig != null) {
               vc.setOverlayConfiguration(overlayConfig);
               overlayHostConfigurations.remove(name);
-              _serializedConfigMap.put(
-                  name,
-                  Paths.get(BfConsts.RELPATH_HOST_CONFIGS_DIR, overlayConfig.getFilename())
-                      .toString());
+              _serializedConfigMap.put(name, overlayConfig.getFilename());
             }
 
             Path currentOutputPath = outputPath.resolve(name);
             output.put(currentOutputPath, vc);
-            _serializedConfigMap.put(
-                name, Paths.get(BfConsts.RELPATH_CONFIGURATIONS_DIR, vc.getFilename()).toString());
+            _serializedConfigMap.put(name, vc.getFilename());
           }
         });
 
