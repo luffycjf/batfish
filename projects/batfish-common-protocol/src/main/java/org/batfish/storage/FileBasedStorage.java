@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
+import com.google.common.collect.Multimap;
 import com.google.common.io.Closer;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -869,5 +870,35 @@ public final class FileBasedStorage implements StorageProvider {
     path.getParent().toFile().mkdirs();
     FileUtils.writeStringToFile(
         path.toFile(), BatfishObjectMapper.writePrettyString(topology), UTF_8);
+  }
+
+  private @Nonnull Path getSerializedObjectMapPath(NetworkId networkId, SnapshotId snapshotId) {
+    return _d.getSnapshotDir(networkId, snapshotId)
+        .resolve(BfConsts.RELPATH_OUTPUT)
+        .resolve(BfConsts.RELPATH_SERIALIZED_OBJECT_MAP_PATH);
+  }
+
+  @Override
+  public @Nullable Multimap<String, String> loadSerializedObjectMap(
+      NetworkId networkId, SnapshotId snapshotId) throws IOException {
+    Path path = getSerializedObjectMapPath(networkId, snapshotId);
+    if (Files.exists(path)) {
+      return BatfishObjectMapper.mapper()
+          .readValue(
+              FileUtils.readFileToString(path.toFile(), UTF_8),
+              new TypeReference<Multimap<String, String>>() {});
+    } else {
+      return null;
+    }
+  }
+
+  @Override
+  public void storeSerializedObjectMap(
+      NetworkId networkId, SnapshotId snapshotId, Multimap<String, String> serializedObjectMap)
+      throws IOException {
+    Path path = getSerializedObjectMapPath(networkId, snapshotId);
+    path.getParent().toFile().mkdirs();
+    FileUtils.writeStringToFile(
+        path.toFile(), BatfishObjectMapper.writePrettyString(serializedObjectMap), UTF_8);
   }
 }

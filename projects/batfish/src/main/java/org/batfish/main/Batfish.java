@@ -1,5 +1,6 @@
 package org.batfish.main;
 
+import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verify;
@@ -429,8 +430,6 @@ public class Batfish extends PluginConsumer implements IBatfish {
 
   private BatfishLogger _logger;
 
-  private Multimap<String, String> _serializedConfigMap;
-
   private Settings _settings;
 
   private final StorageProvider _storage;
@@ -481,7 +480,6 @@ public class Batfish extends PluginConsumer implements IBatfish {
         alternateIdResolver != null
             ? alternateIdResolver
             : new FileBasedIdResolver(_settings.getStorageBase());
-    _serializedConfigMap = TreeMultimap.create();
   }
 
   private Answer analyze() {
@@ -1427,6 +1425,11 @@ public class Batfish extends PluginConsumer implements IBatfish {
     return _settings.getImmutableConfiguration();
   }
 
+  // Visible for testing
+  StorageProvider getStorage() {
+    return _storage;
+  }
+
   NetworkSnapshot getNetworkSnapshot() {
     return new NetworkSnapshot(_settings.getContainer(), _testrigSettings.getName());
   }
@@ -2074,12 +2077,10 @@ public class Batfish extends PluginConsumer implements IBatfish {
     return parse(parser);
   }
 
-  private AwsConfiguration parseAwsConfigurations(Map<Path, String> configurationData) {
+  private AwsConfiguration parseAwsConfigurations(
+      Map<Path, String> configurationData, Multimap<String, String> serializedObjectMap) {
     AwsConfiguration config = new AwsConfiguration();
 
-    // Something like
-    // String filename =
-    // _settings.getActiveTestrigSettings().getInputPath().relativize(currentFile).toString();
     for (Entry<Path, String> configFile : configurationData.entrySet()) {
       Path file = configFile.getKey();
       String filename =
@@ -2104,7 +2105,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
       if (jsonObj != null) {
         try {
           config.addConfigElement(regionName, jsonObj, _logger);
-          _serializedConfigMap.put(BfConsts.RELPATH_AWS_CONFIGS_FILE, filename);
+          serializedObjectMap.put(BfConsts.RELPATH_AWS_CONFIGS_FILE, filename);
         } catch (JSONException e) {
           throw new BatfishException("Problems parsing JSON in " + filename, e);
         }
@@ -3122,7 +3123,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
     }
   }
 
-  private Answer serializeAwsConfigs(Path testRigPath, Path outputPath) {
+  private Answer serializeAwsConfigs(
+      Path testRigPath, Path outputPath, Multimap<String, String> serializedObjectMap) {
     Answer answer = new Answer();
     Map<Path, String> configurationData =
         readConfigurationFiles(testRigPath, BfConsts.RELPATH_AWS_CONFIGS_DIR);
@@ -3130,7 +3132,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
     try (ActiveSpan parseAwsConfigsSpan =
         GlobalTracer.get().buildSpan("Parse AWS configs").startActive()) {
       assert parseAwsConfigsSpan != null; // avoid unused warning
-      config = parseAwsConfigurations(configurationData);
+      config = parseAwsConfigurations(configurationData, serializedObjectMap);
     }
 
     _logger.info("\n*** SERIALIZING AWS CONFIGURATION STRUCTURES ***\n");
@@ -3207,7 +3209,10 @@ public class Batfish extends PluginConsumer implements IBatfish {
   }
 
   private SortedMap<String, VendorConfiguration> serializeHostConfigs(
-      Path testRigPath, Path outputPath, ParseVendorConfigurationAnswerElement answerElement) {
+      Path testRigPath,
+      Path outputPath,
+      ParseVendorConfigurationAnswerElement answerElement,
+      Multimap<String, String> serializedObjectMap) {
     SortedMap<Path, String> configurationData =
         readConfigurationFiles(testRigPath, BfConsts.RELPATH_HOST_CONFIGS_DIR);
     // read the host files
@@ -3267,7 +3272,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
         (name, vc) -> {
           Path currentOutputPath = outputPath.resolve(name);
           output.put(currentOutputPath, vc);
-          _serializedConfigMap.put(name, vc.getFilename());
+          serializedObjectMap.put(name, vc.getFilename());
         });
     serializeObjects(output);
     // serialize warnings
@@ -3279,6 +3284,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
   private Answer serializeIndependentConfigs(Path vendorConfigPath) {
     Answer answer = new Answer();
     ConvertConfigurationAnswerElement answerElement = new ConvertConfigurationAnswerElement();
+
     answerElement.setVersion(Version.getVersion());
     if (_settings.getVerboseParse()) {
       answer.addAnswerElement(answerElement);
@@ -3327,7 +3333,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
       Path testRigPath,
       Path outputPath,
       ParseVendorConfigurationAnswerElement answerElement,
-      SortedMap<String, VendorConfiguration> overlayHostConfigurations) {
+      SortedMap<String, VendorConfiguration> overlayHostConfigurations,
+      Multimap<String, String> serializedObjectMap) {
     Map<Path, String> configurationData =
         readConfigurationFiles(testRigPath, BfConsts.RELPATH_CONFIGURATIONS_DIR);
     Map<String, VendorConfiguration> vendorConfigurations;
@@ -3364,12 +3371,12 @@ public class Batfish extends PluginConsumer implements IBatfish {
             if (overlayConfig != null) {
               vc.setOverlayConfiguration(overlayConfig);
               overlayHostConfigurations.remove(name);
-              _serializedConfigMap.put(name, overlayConfig.getFilename());
+              serializedObjectMap.put(name, overlayConfig.getFilename());
             }
 
             Path currentOutputPath = outputPath.resolve(name);
             output.put(currentOutputPath, vc);
-            _serializedConfigMap.put(name, vc.getFilename());
+            serializedObjectMap.put(name, vc.getFilename());
           }
         });
 
@@ -3407,6 +3414,18 @@ public class Batfish extends PluginConsumer implements IBatfish {
     Answer answer = new Answer();
     boolean configsFound = false;
 
+    SnapshotId snapshotId = _settings.getTestrig();
+    NetworkId networkId = _settings.getContainer();
+    Multimap<String, String> serializedObjectMap;
+
+    try {
+      serializedObjectMap =
+          firstNonNull(
+              _storage.loadSerializedObjectMap(networkId, snapshotId), TreeMultimap.create());
+    } catch (IOException e) {
+      throw new BatfishException("Failed to retrieve serialized object map", e);
+    }
+
     // look for network configs
     Path networkConfigsPath = testRigPath.resolve(BfConsts.RELPATH_CONFIGURATIONS_DIR);
     ParseVendorConfigurationAnswerElement answerElement =
@@ -3420,19 +3439,21 @@ public class Batfish extends PluginConsumer implements IBatfish {
     SortedMap<String, VendorConfiguration> overlayHostConfigurations = new TreeMap<>();
     Path hostConfigsPath = testRigPath.resolve(BfConsts.RELPATH_HOST_CONFIGS_DIR);
     if (Files.exists(hostConfigsPath)) {
-      overlayHostConfigurations = serializeHostConfigs(testRigPath, outputPath, answerElement);
+      overlayHostConfigurations =
+          serializeHostConfigs(testRigPath, outputPath, answerElement, serializedObjectMap);
       configsFound = true;
     }
 
     if (Files.exists(networkConfigsPath)) {
-      serializeNetworkConfigs(testRigPath, outputPath, answerElement, overlayHostConfigurations);
+      serializeNetworkConfigs(
+          testRigPath, outputPath, answerElement, overlayHostConfigurations, serializedObjectMap);
       configsFound = true;
     }
 
     // look for AWS VPC configs
     Path awsVpcConfigsPath = testRigPath.resolve(BfConsts.RELPATH_AWS_CONFIGS_DIR);
     if (Files.exists(awsVpcConfigsPath)) {
-      answer.append(serializeAwsConfigs(testRigPath, outputPath));
+      answer.append(serializeAwsConfigs(testRigPath, outputPath, serializedObjectMap));
       configsFound = true;
     }
 
@@ -3442,6 +3463,12 @@ public class Batfish extends PluginConsumer implements IBatfish {
 
     // serialize warnings
     serializeObject(answerElement, _testrigSettings.getParseAnswerPath());
+
+    try {
+      _storage.storeSerializedObjectMap(networkId, snapshotId, serializedObjectMap);
+    } catch (IOException e) {
+      throw new BatfishException("Failed to write serialized object map", e);
+    }
 
     return answer;
   }

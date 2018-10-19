@@ -1,5 +1,6 @@
 package org.batfish.storage;
 
+import com.google.common.collect.Multimap;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -280,6 +281,19 @@ public class TestStorageProvider implements StorageProvider {
   @Override
   public void storePojoTopology(
       org.batfish.datamodel.pojo.Topology topology, NetworkId networkId, SnapshotId snapshotId)
+      throws IOException {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public Multimap<String, String> loadSerializedObjectMap(
+      NetworkId networkId, SnapshotId snapshotId) throws IOException {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public void storeSerializedObjectMap(
+      NetworkId networkId, SnapshotId snapshotId, Multimap<String, String> serializedObjectMap)
       throws IOException {
     throw new UnsupportedOperationException();
   }

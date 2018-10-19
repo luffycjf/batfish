@@ -2,13 +2,16 @@ package org.batfish.storage;
 
 import static org.batfish.common.Version.INCOMPATIBLE_VERSION;
 import static org.batfish.storage.FileBasedStorage.objectKeyToRelativePath;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertThat;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import com.google.common.collect.TreeMultimap;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -161,5 +164,32 @@ public final class FileBasedStorageTest {
   public void testObjectKeyToRelativePathValid() throws IOException {
     // no exception should be thrown
     objectKeyToRelativePath("foo/bar");
+  }
+
+  @Test
+  public void testStoreSerializedObjectMapThenLoad() throws IOException {
+    NetworkId network = new NetworkId("network");
+    SnapshotId snapshot = new SnapshotId("snapshot");
+    Multimap<String, String> serializedObjectMap = TreeMultimap.create();
+    String key = "key";
+    String value = "value";
+    serializedObjectMap.put(key, value);
+
+    _storage.storeSerializedObjectMap(network, snapshot, serializedObjectMap);
+
+    Multimap<String, String> deserializedMap = _storage.loadSerializedObjectMap(network, snapshot);
+
+    assertThat(deserializedMap, not(nullValue()));
+    assertThat(deserializedMap.keySet(), containsInAnyOrder(key));
+    assertThat(deserializedMap.get(key), containsInAnyOrder(value));
+  }
+
+  @Test
+  public void testLoadSerializedObjectMapMissing() throws IOException {
+    NetworkId network = new NetworkId("network");
+    SnapshotId snapshot = new SnapshotId("snapshot");
+    Multimap<String, String> deserializedMap = _storage.loadSerializedObjectMap(network, snapshot);
+
+    assertThat(deserializedMap, nullValue());
   }
 }

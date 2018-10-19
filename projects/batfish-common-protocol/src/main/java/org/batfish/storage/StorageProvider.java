@@ -1,5 +1,6 @@
 package org.batfish.storage;
 
+import com.google.common.collect.Multimap;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -432,5 +433,23 @@ public interface StorageProvider {
    */
   void storePojoTopology(
       org.batfish.datamodel.pojo.Topology topology, NetworkId networkId, SnapshotId snapshotId)
+      throws IOException;
+
+  /**
+   * Reads the serialized object to original file map
+   *
+   * @throws IOException if there is an error reading the map
+   */
+  @Nullable
+  Multimap<String, String> loadSerializedObjectMap(NetworkId networkId, SnapshotId snapshotId)
+      throws IOException;
+
+  /**
+   * Writes the serialized object to original file map
+   *
+   * @throws IOException if there is an error writing the map
+   */
+  void storeSerializedObjectMap(
+      NetworkId networkId, SnapshotId snapshotId, Multimap<String, String> serializedObjectMap)
       throws IOException;
 }

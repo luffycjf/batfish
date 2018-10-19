@@ -9,12 +9,14 @@ import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.collection.IsEmptyCollection.empty;
+import static org.hamcrest.core.IsNot.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
+import com.google.common.collect.Multimap;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -31,11 +33,14 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import org.batfish.common.Answerer;
 import org.batfish.common.BatfishException;
+import org.batfish.common.BfConsts;
 import org.batfish.common.topology.Layer1Edge;
 import org.batfish.common.topology.Layer1Node;
 import org.batfish.common.topology.Layer1Topology;
 import org.batfish.common.topology.TopologyUtil;
 import org.batfish.common.util.CommonUtil;
+import org.batfish.config.Settings;
+import org.batfish.config.TestrigSettings;
 import org.batfish.datamodel.Configuration;
 import org.batfish.datamodel.ConfigurationFormat;
 import org.batfish.datamodel.Edge;
@@ -532,5 +537,89 @@ public class BatfishTest {
 
     // should get null answerer if no creator available
     assertThat(batfish.createAnswerer(testQuestionMissing), nullValue());
+  }
+
+  @Test
+  public void testSerializedObjectMap() throws IOException {
+    List<String> configurationNames = ImmutableList.of("r1", "r2");
+    Batfish batfish =
+        BatfishTestUtils.getBatfishFromTestrigText(
+            TestrigText.builder()
+                .setConfigurationText(
+                    "org/batfish/grammar/cisco/testrigs/basic-nodes", configurationNames)
+                .build(),
+            _folder);
+    TestrigSettings snapshotSettings = batfish.getTestrigSettings();
+    Settings settings = batfish.getSettings();
+
+    batfish.serializeVendorConfigs(
+        snapshotSettings.getInputPath(), snapshotSettings.getSerializeVendorPath());
+    Multimap<String, String> serializedObjectMap =
+        batfish
+            .getStorage()
+            .loadSerializedObjectMap(settings.getContainer(), settings.getTestrig());
+
+    // Confirm the two output configurations map back to the two input files
+    assertThat(serializedObjectMap, not(nullValue()));
+    assertThat(serializedObjectMap.keySet(), containsInAnyOrder("hostname1", "hostname2"));
+    assertThat(serializedObjectMap.get("hostname1"), containsInAnyOrder("configs/r1"));
+    assertThat(serializedObjectMap.get("hostname2"), containsInAnyOrder("configs/r2"));
+  }
+
+  @Test
+  public void testSerializedObjectMapAWS() throws IOException {
+    Batfish batfish =
+        BatfishTestUtils.getBatfishFromTestrigText(
+            TestrigText.builder()
+                .setAwsText(
+                    "org/batfish/representation/aws/basic/",
+                    ImmutableList.of("NetworkInterfaceTest.json", "SubnetTest.json"))
+                .build(),
+            _folder);
+    TestrigSettings snapshotSettings = batfish.getTestrigSettings();
+    Settings settings = batfish.getSettings();
+
+    batfish.serializeVendorConfigs(
+        snapshotSettings.getInputPath(), snapshotSettings.getSerializeVendorPath());
+    Multimap<String, String> serializedObjectMap =
+        batfish
+            .getStorage()
+            .loadSerializedObjectMap(settings.getContainer(), settings.getTestrig());
+
+    // Confirm the one output configuration map back to the two input files (multiple aws_configs)
+    assertThat(serializedObjectMap, not(nullValue()));
+    assertThat(serializedObjectMap.keySet(), containsInAnyOrder(BfConsts.RELPATH_AWS_CONFIGS_FILE));
+    assertThat(
+        serializedObjectMap.get(BfConsts.RELPATH_AWS_CONFIGS_FILE),
+        containsInAnyOrder("aws_configs/NetworkInterfaceTest.json", "aws_configs/SubnetTest.json"));
+  }
+
+  @Test
+  public void testSerializedObjectMapOverlay() throws IOException {
+    Batfish batfish =
+        BatfishTestUtils.getBatfishFromTestrigText(
+            TestrigText.builder()
+                .setConfigurationText(
+                    "org/batfish/grammar/cisco/testrigs/basic-nodes/", ImmutableList.of("r1"))
+                .setHostsText(
+                    "org/batfish/grammar/host/testrigs/basic/", ImmutableList.of("r1overlay.json"))
+                .build(),
+            _folder);
+    TestrigSettings snapshotSettings = batfish.getTestrigSettings();
+    Settings settings = batfish.getSettings();
+
+    batfish.serializeVendorConfigs(
+        snapshotSettings.getInputPath(), snapshotSettings.getSerializeVendorPath());
+    Multimap<String, String> serializedObjectMap =
+        batfish
+            .getStorage()
+            .loadSerializedObjectMap(settings.getContainer(), settings.getTestrig());
+
+    // Confirm the one output configuration map back to the two input files (config + overlay)
+    assertThat(serializedObjectMap, not(nullValue()));
+    assertThat(serializedObjectMap.keySet(), containsInAnyOrder("hostname1"));
+    assertThat(
+        serializedObjectMap.get("hostname1"),
+        containsInAnyOrder("configs/r1", "hosts/r1overlay.json"));
   }
 }
